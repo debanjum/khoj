@@ -1,0 +1,60 @@
+## DATABASE
+
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres
+POSTGRES_DB=postgres
+
+## SEARCH
+
+SEARXNG_BASE_URL=http://localhost:8080/
+
+## SERVER
+
+POSTGRES_DB=postgres
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres
+POSTGRES_HOST=database
+POSTGRES_PORT=5432
+KHOJ_DJANGO_SECRET_KEY=secret
+KHOJ_DEBUG=False
+KHOJ_ADMIN_EMAIL=username@example.com
+KHOJ_ADMIN_PASSWORD=password
+# Default URL of Terrarium, the Python sandbox used by Khoj to run code. Its container is specified above
+KHOJ_TERRARIUM_URL=http://sandbox:8080
+# Default URL of SearxNG, the default web search engine used by Khoj. Its container is specified above
+KHOJ_SEARXNG_URL=http://search:8080
+# Uncomment line below to use with Ollama running on your local machine at localhost:11434.
+# Change URL to use with other OpenAI API compatible providers like VLLM, LMStudio etc.
+# OPENAI_API_BASE=http://host.docker.internal:11434/v1/
+#
+# Uncomment appropriate lines below to use chat models by OpenAI, Anthropic, Google.
+# Ensure you set your provider specific API keys.
+# ---
+# OPENAI_API_KEY=your_openai_api_key
+# GEMINI_API_KEY=your_gemini_api_key
+# ANTHROPIC_API_KEY=your_anthropic_api_key
+#
+# Uncomment appropriate lines below to enable web results with Khoj
+# Ensure you set your provider specific API keys.
+# ---
+# Free, Slower API. Does both web search and webpage read. Get API key from https://jina.ai/
+# JINA_API_KEY=your_jina_api_key
+# Paid, Fast API. Only does web search. Get API key from https://serper.dev/
+# SERPER_DEV_API_KEY=your_serper_dev_api_key
+# Paid, Fast, Open API. Only does webpage read. Get API key from https://firecrawl.dev/
+# FIRECRAWL_API_KEY=your_firecrawl_api_key
+# Paid, Fast, Higher Read Success API. Only does webpage read. Get API key from https://olostep.com/
+# OLOSTEP_API_KEY=your_olostep_api_key
+#
+# Uncomment the necessary lines below to make your instance publicly accessible.
+# Replace the KHOJ_DOMAIN with either your domain or IP address (no http/https prefix).
+# Proceed with caution, especially if you are using anonymous mode.
+# ---
+# KHOJ_NO_HTTPS=True
+# KHOJ_DOMAIN=192.168.0.104
+# KHOJ_DOMAIN=khoj.example.com
+# Uncomment the line below to disable telemetry.
+# Telemetry helps us prioritize feature development and understand how people are using Khoj
+# Read more at https://docs.khoj.dev/miscellaneous/telemetry
+# KHOJ_TELEMETRY_DISABLE=True
+# Comment out this line when you're using the official ghcr.io/khoj-ai/khoj-cloud:latest prod image.
