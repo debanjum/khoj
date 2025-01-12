@@ -87,7 +87,7 @@ export async function updateContentIndex(vault: Vault, setting: KhojSetting, las
     lastSync = lastSync.size > 0 ? lastSync : new Map<TFile, number>();
 
     // Add all files to index as multipart form data
-    const fileData = [];
+    let fileData = [];
     let currentBatchSize = 0;
     const MAX_BATCH_SIZE = 10 * 1024 * 1024; // 10MB max batch size
     let currentBatch = [];
@@ -132,18 +132,38 @@ export async function updateContentIndex(vault: Vault, setting: KhojSetting, las
         fileData.push(currentBatch);
     }
 
+    // Delete all files of enabled content types first if regenerating
+    let error_message = null;
+    const contentTypesToDelete = [];
+    if (regenerate) {
+        // Mark content types to delete based on user sync file type settings
+        if (setting.syncFileType.markdown) contentTypesToDelete.push('markdown');
+        if (setting.syncFileType.pdf) contentTypesToDelete.push('pdf');
+        if (setting.syncFileType.images) contentTypesToDelete.push('image');
+    }
+    for (const contentType of contentTypesToDelete) {
+        const response = await fetch(`${setting.khojUrl}/api/content/${contentType}?client=obsidian`, {
+            method: "DELETE",
+            headers: {
+                'Authorization': `Bearer ${setting.khojApiKey}`,
+            }
+        });
+        if (!response.ok) {
+            error_message = "❗️Failed to clear existing content index";
+            fileData = [];
+        }
+    }
+
     // Iterate through all indexable files in vault, 10Mb batch at a time
     let responses: string[] = [];
-    let error_message = null;
     for (const batch of fileData) {
         // Create multipart form data with all files in batch
         const formData = new FormData();
         batch.forEach(fileItem => { formData.append('files', fileItem.blob, fileItem.path) });
 
         // Call Khoj backend to sync index with updated files in vault
-        const method = regenerate ? "PUT" : "PATCH";
         const response = await fetch(`${setting.khojUrl}/api/content?client=obsidian`, {
-            method: method,
+            method: "PATCH",
             headers: {
                 'Authorization': `Bearer ${setting.khojApiKey}`,
             },
