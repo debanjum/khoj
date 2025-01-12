@@ -88,6 +88,10 @@ export async function updateContentIndex(vault: Vault, setting: KhojSetting, las
 
     // Add all files to index as multipart form data
     const fileData = [];
+    let currentBatchSize = 0;
+    const MAX_BATCH_SIZE = 10 * 1024 * 1024; // 10MB max batch size
+    let currentBatch = [];
+
     for (const file of files) {
         // Only push files that have been modified since last sync if not regenerating
         if (!regenerate && file.stat.mtime < (lastSync.get(file) ?? 0)) {
@@ -98,29 +102,46 @@ export async function updateContentIndex(vault: Vault, setting: KhojSetting, las
         const encoding = supportedBinaryFileTypes.includes(file.extension) ? "binary" : "utf8";
         const mimeType = fileExtensionToMimeType(file.extension) + (encoding === "utf8" ? "; charset=UTF-8" : "");
         const fileContent = encoding == 'binary' ? await vault.readBinary(file) : await vault.read(file);
-        fileData.push({ blob: new Blob([fileContent], { type: mimeType }), path: file.path });
+        const fileItem = { blob: new Blob([fileContent], { type: mimeType }), path: file.path };
+
+        // Check if adding this file would exceed batch size
+        const fileSize = (typeof fileContent === 'string') ? new Blob([fileContent]).size : fileContent.byteLength;
+        if (currentBatchSize + fileSize > MAX_BATCH_SIZE && currentBatch.length > 0) {
+            fileData.push(currentBatch);
+            currentBatch = [];
+            currentBatchSize = 0;
+        }
+
+        currentBatch.push(fileItem);
+        currentBatchSize += fileSize;
     }
 
-    // Add any previously synced files to be deleted to multipart form data
+    // Add any previously synced files to be deleted to final batch
     let filesToDelete: TFile[] = [];
     for (const lastSyncedFile of lastSync.keys()) {
         if (!files.includes(lastSyncedFile)) {
             countOfFilesToDelete++;
             let fileObj = new Blob([""], { type: filenameToMimeType(lastSyncedFile) });
-            fileData.push({ blob: fileObj, path: lastSyncedFile.path });
+            currentBatch.push({ blob: fileObj, path: lastSyncedFile.path });
             filesToDelete.push(lastSyncedFile);
         }
     }
 
-    // Iterate through all indexable files in vault, 1000 at a time
+    // Add final batch if not empty
+    if (currentBatch.length > 0) {
+        fileData.push(currentBatch);
+    }
+
+    // Iterate through all indexable files in vault, 10Mb batch at a time
     let responses: string[] = [];
     let error_message = null;
-    for (let i = 0; i < fileData.length; i += 1000) {
-        const filesGroup = fileData.slice(i, i + 1000);
+    for (const batch of fileData) {
+        // Create multipart form data with all files in batch
         const formData = new FormData();
+        batch.forEach(fileItem => { formData.append('files', fileItem.blob, fileItem.path) });
+
+        // Call Khoj backend to sync index with updated files in vault
         const method = regenerate ? "PUT" : "PATCH";
-        filesGroup.forEach(fileItem => { formData.append('files', fileItem.blob, fileItem.path) });
-        // Call Khoj backend to update index with all markdown, pdf files
         const response = await fetch(`${setting.khojUrl}/api/content?client=obsidian`, {
             method: method,
             headers: {
@@ -167,7 +188,7 @@ export async function updateContentIndex(vault: Vault, setting: KhojSetting, las
                 error_message = `❗️Could not connect to Khoj server. Ensure you can connect to it.`;
                 break;
             } else {
-                error_message = `❗️Failed to sync your content with Khoj server. Raise issue on Khoj Discord or Github\nError: ${response.statusText}`;
+                error_message = `❗️Failed to sync all your content with Khoj server. Raise issue on Khoj Discord or Github\nError: ${response.statusText}`;
             }
         } else {
             responses.push(await response.text());
