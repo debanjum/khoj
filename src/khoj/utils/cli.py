@@ -53,6 +53,12 @@ def cli(args=None):
         help="Run Khoj in anonymous mode. This does not require any login for connecting users.",
     )
     parser.add_argument(
+        "--controlled-access",
+        action="store_true",
+        default=False,
+        help="Run with database authentication but no OAuth/Google login. Requires admin to create users.",
+    )
+    parser.add_argument(
         "--non-interactive",
         action="store_true",
         default=False,

@@ -211,7 +211,20 @@ def set_state(args):
     state.ssl_config = (
         {"ssl_certfile": args.sslcert, "ssl_keyfile": args.sslkey} if args.sslcert and args.sslkey else None
     )
-    state.anonymous_mode = args.anonymous_mode
+
+    # Handle authentication modes
+    if args.anonymous_mode and args.controlled_access:
+        logger.error("Cannot use both --anonymous-mode and --controlled-access")
+        sys.exit(1)
+
+    # Handle authentication modes - CLI flags override environment variables
+    state.anonymous_mode = args.anonymous_mode or is_env_var_true("KHOJ_ANONYMOUS_MODE")
+    state.controlled_access_mode = args.controlled_access or is_env_var_true("KHOJ_CONTROLLED_ACCESS")
+
+    # Ensure modes are mutually exclusive
+    if state.anonymous_mode and state.controlled_access_mode:
+        logger.error("Cannot use both anonymous mode and controlled access mode")
+        sys.exit(1)
     state.khoj_version = version("khoj")
     state.chat_on_gpu = args.chat_on_gpu
 

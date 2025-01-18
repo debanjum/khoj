@@ -98,7 +98,9 @@ class UserAuthenticationBackend(AuthenticationBackend):
 
         self.khojuser_manager = KhojUser.objects
         self.khojapiuser_manager = KhojApiUser.objects
-        self._initialize_default_user()
+        # Only create default user if not in controlled access or anonymous mode
+        if not state.controlled_access_mode:
+            self._initialize_default_user()
         super().__init__()
 
     def _initialize_default_user(self):
@@ -112,24 +114,34 @@ class UserAuthenticationBackend(AuthenticationBackend):
             Subscription.objects.create(user=default_user, type=Subscription.Type.STANDARD, renewal_date=renewal_date)
 
     async def authenticate(self, request: HTTPConnection):
+        # Handle session-based auth
         current_user = request.session.get("user")
-        if current_user and current_user.get("email"):
-            user = (
-                await self.khojuser_manager.filter(email=current_user.get("email"))
-                .prefetch_related("subscription")
-                .afirst()
-            )
-            if user:
-                subscribed = await ais_user_subscribed(user)
-                if subscribed:
-                    return AuthCredentials(["authenticated", "premium"]), AuthenticatedKhojUser(user)
-                return AuthCredentials(["authenticated"]), AuthenticatedKhojUser(user)
+        if current_user:
+            # In controlled access mode, use username
+            if state.controlled_access_mode and current_user.get("username"):
+                user = (
+                    await self.khojuser_manager.filter(username=current_user.get("username"))
+                    .prefetch_related("subscription")
+                    .afirst()
+                )
+                if user:
+                    return AuthCredentials(["authenticated"]), AuthenticatedKhojUser(user)
+            # In OAuth mode, use email
+            elif not state.controlled_access_mode and current_user.get("email"):
+                user = (
+                    await self.khojuser_manager.filter(email=current_user.get("email"))
+                    .prefetch_related("subscription")
+                    .afirst()
+                )
+                if user:
+                    subscribed = await ais_user_subscribed(user)
+                    if subscribed:
+                        return AuthCredentials(["authenticated", "premium"]), AuthenticatedKhojUser(user)
+                    return AuthCredentials(["authenticated"]), AuthenticatedKhojUser(user)
 
-        # Request from Desktop, Emacs, Obsidian clients
+        # Handle API token auth
         if len(request.headers.get("Authorization", "").split("Bearer ")) == 2:
-            # Get bearer token from header
             bearer_token = request.headers["Authorization"].split("Bearer ")[1]
-            # Get user owning token
             user_with_token = (
                 await self.khojapiuser_manager.filter(token=bearer_token)
                 .select_related("user")
@@ -142,10 +154,9 @@ class UserAuthenticationBackend(AuthenticationBackend):
                     return AuthCredentials(["authenticated", "premium"]), AuthenticatedKhojUser(user_with_token.user)
                 return AuthCredentials(["authenticated"]), AuthenticatedKhojUser(user_with_token.user)
 
-        # Request from Whatsapp client
+        # Handle WhatsApp client
         client_id = request.query_params.get("client_id")
         if client_id:
-            # Get the client secret, which is passed in the Authorization header
             client_secret = request.headers["Authorization"].split("Bearer ")[1]
             if not client_secret:
                 return Response(
@@ -153,11 +164,10 @@ class UserAuthenticationBackend(AuthenticationBackend):
                     content="Please provide a client secret in the Authorization header with a client_id query param.",
                 )
 
-            # Get the client application
             client_application = await ClientApplicationAdapters.aget_client_application_by_id(client_id, client_secret)
             if client_application is None:
                 return AuthCredentials(), UnauthenticatedUser()
-            # Get the identifier used for the user
+
             phone_number = request.query_params.get("phone_number")
             if is_none_or_empty(phone_number):
                 return AuthCredentials(), UnauthenticatedUser()
@@ -182,7 +192,7 @@ class UserAuthenticationBackend(AuthenticationBackend):
                 return AuthCredentials(["authenticated", "premium"]), AuthenticatedKhojUser(user, client_application)
             return AuthCredentials(["authenticated"]), AuthenticatedKhojUser(user, client_application)
 
-        # No auth required if server in anonymous mode
+        # Handle anonymous mode
         if state.anonymous_mode:
             user = await self.khojuser_manager.filter(username="default").prefetch_related("subscription").afirst()
             if user:
@@ -325,11 +335,18 @@ def configure_routes(app):
     app.include_router(notion_router, prefix="/api/notion")
     app.include_router(web_client)
 
+    # Add auth router if not in anonymous mode
     if not state.anonymous_mode:
-        from khoj.routers.auth import auth_router
+        if state.controlled_access_mode:
+            from khoj.routers.basic_auth import basic_auth_router
 
-        app.include_router(auth_router, prefix="/auth")
-        logger.info("🔑 Enabled Authentication")
+            app.include_router(basic_auth_router, prefix="/auth")
+            logger.info("🔑 Enabled Basic Authentication")
+        else:
+            from khoj.routers.auth import auth_router
+
+            app.include_router(auth_router, prefix="/auth")
+            logger.info("🔑 Enabled OAuth Authentication")
 
     if state.billing_enabled:
         from khoj.routers.api_subscription import subscription_router

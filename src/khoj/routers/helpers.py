@@ -2184,6 +2184,7 @@ async def read_chat_stream(response_iterator: AsyncGenerator[str, None]) -> Dict
     }
 
 
+# Only showing the relevant function for brevity
 def get_user_config(user: KhojUser, request: Request, is_detailed: bool = False):
     user_picture = request.session.get("user", {}).get("picture")
     is_active = has_required_scope(request, ["premium"])
@@ -2197,6 +2198,8 @@ def get_user_config(user: KhojUser, request: Request, is_detailed: bool = False)
             "is_active": is_active,
             "has_documents": has_documents,
             "khoj_version": state.khoj_version,
+            "anonymous_mode": state.anonymous_mode,
+            "controlled_access_mode": state.controlled_access_mode,  # Add controlled access mode
         }
 
     user_subscription_state = get_user_subscription_state(user.email)
@@ -2282,6 +2285,7 @@ def get_user_config(user: KhojUser, request: Request, is_detailed: bool = False)
         "is_twilio_enabled": is_twilio_enabled(),
         "khoj_version": state.khoj_version,
         "anonymous_mode": state.anonymous_mode,
+        "controlled_access_mode": state.controlled_access_mode,  # Add controlled access mode
         "notion_oauth_url": notion_oauth_url,
         "length_of_free_trial": LENGTH_OF_FREE_TRIAL,
     }

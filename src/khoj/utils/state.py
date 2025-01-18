@@ -40,6 +40,7 @@ khoj_version: str = None
 device = get_device()
 chat_on_gpu: bool = True
 anonymous_mode: bool = False
+controlled_access_mode: bool = False
 pretrained_tokenizers: Dict[str, Any] = dict()
 billing_enabled: bool = (
     os.getenv("STRIPE_API_KEY") is not None

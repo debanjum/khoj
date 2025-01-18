@@ -1,10 +1,18 @@
 "use client";
 
-import styles from "./loginPrompt.module.css";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+    Carousel,
+    CarouselContent,
+    CarouselItem,
+    CarouselNext,
+    CarouselPrevious,
+} from "@/components/ui/carousel";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Drawer, DrawerContent } from "@/components/ui/drawer";
 import { Input } from "@/components/ui/input";
-import Autoplay from "embla-carousel-autoplay";
+import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import {
     ArrowLeft,
     ArrowsClockwise,
@@ -13,20 +21,12 @@ import {
     PencilSimple,
     Spinner,
 } from "@phosphor-icons/react";
+import Autoplay from "embla-carousel-autoplay";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import { GoogleSignIn } from "./GoogleSignIn";
-import { Drawer, DrawerContent } from "@/components/ui/drawer";
-import {
-    Carousel,
-    CarouselContent,
-    CarouselItem,
-    CarouselNext,
-    CarouselPrevious,
-} from "@/components/ui/carousel";
-import { Card, CardContent } from "@/components/ui/card";
-import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
+import styles from "./loginPrompt.module.css";
 
 export interface LoginPromptProps {
     onOpenChange: (open: boolean) => void;
@@ -48,12 +48,51 @@ interface CredentialsData {
 
 export default function LoginPrompt(props: LoginPromptProps) {
     const { data, error, isLoading } = useSWR<CredentialsData>("/auth/oauth/metadata", fetcher);
-
+    const [isBasicAuth, setIsBasicAuth] = useState(false);
     const [useEmailSignIn, setUseEmailSignIn] = useState(false);
+    const [username, setUsername] = useState("");
+    const [password, setPassword] = useState("");
+    const [loginError, setLoginError] = useState("");
+    const [isLoggingIn, setIsLoggingIn] = useState(false);
 
     const [email, setEmail] = useState("");
     const [checkEmail, setCheckEmail] = useState(false);
     const [recheckEmail, setRecheckEmail] = useState(false);
+
+    useEffect(() => {
+        // We're in basic auth mode if:
+        // 1. Data is empty object (no providers)
+        // 2. Data has google: null (controlled access mode)
+        if (!isLoading && (!data || Object.keys(data).length === 0 || data.google === null)) {
+            setIsBasicAuth(true);
+        }
+    }, [data, isLoading]);
+
+    const handleBasicLogin = async () => {
+        if (isLoggingIn || !username || !password) return;
+        setIsLoggingIn(true);
+        setLoginError("");
+        const formData = new FormData();
+        formData.append("username", username);
+        formData.append("password", password);
+
+        try {
+            const response = await fetch("/auth/login", {
+                method: "POST",
+                body: formData,
+            });
+
+            if (response.ok && response.redirected) {
+                window.location.href = response.url;
+            } else {
+                setLoginError("Invalid username or password");
+            }
+        } catch (err) {
+            setLoginError("Login failed. Please try again.");
+        } finally {
+            setIsLoggingIn(false);
+        }
+    };
 
     useEffect(() => {
         const google = (window as any).google;
@@ -144,12 +183,62 @@ export default function LoginPrompt(props: LoginPromptProps) {
             });
     }
 
+    // Basic auth form component
+    const BasicAuthForm = () => (
+        <div className="flex flex-col gap-4 p-4">
+            <div>
+                <div className="text-center font-bold text-xl">Sign in to Khoj</div>
+            </div>
+            <Input
+                placeholder="Username"
+                className="p-6 w-[300px] mx-auto rounded-lg"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                        handleBasicLogin();
+                    }
+                }}
+            />
+            <Input
+                type="password"
+                placeholder="Password"
+                className="p-6 w-[300px] mx-auto rounded-lg"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                        handleBasicLogin();
+                    }
+                }}
+            />
+            {loginError && <div className="text-red-500 text-sm text-center">{loginError}</div>}
+            <Button
+                variant="default"
+                className="p-6 w-[300px] mx-auto flex gap-2 items-center justify-center rounded-lg"
+                onClick={handleBasicLogin}
+                disabled={isLoggingIn}
+            >
+                {isLoggingIn ? (
+                    <>
+                        <Spinner className="h-5 w-5 animate-spin" />
+                        Signing in...
+                    </>
+                ) : (
+                    "Sign In"
+                )}
+            </Button>
+        </div>
+    );
+
     if (props.isMobileWidth) {
         return (
             <Drawer open={true} onOpenChange={props.onOpenChange}>
                 <DrawerContent className={`flex flex-col gap-4 w-full mb-4`}>
                     <div>
-                        {useEmailSignIn ? (
+                        {isBasicAuth ? (
+                            <BasicAuthForm />
+                        ) : useEmailSignIn ? (
                             <EmailSignInContext
                                 email={email}
                                 setEmail={setEmail}
@@ -182,7 +271,54 @@ export default function LoginPrompt(props: LoginPromptProps) {
                 className={`flex flex-col gap-4 ${!useEmailSignIn ? "p-0 pb-4 m-0 max-w-xl" : "w-fit"}`}
             >
                 <div>
-                    {useEmailSignIn ? (
+                    {isBasicAuth ? (
+                        <div className="flex flex-col gap-4 p-4">
+                            <div>
+                                <div className="text-center font-bold text-xl">Sign in to Khoj</div>
+                            </div>
+                            <Input
+                                placeholder="Username"
+                                className="p-6 w-[300px] mx-auto rounded-lg"
+                                value={username}
+                                onChange={(e) => setUsername(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                        handleBasicLogin();
+                                    }
+                                }}
+                            />
+                            <Input
+                                type="password"
+                                placeholder="Password"
+                                className="p-6 w-[300px] mx-auto rounded-lg"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                        handleBasicLogin();
+                                    }
+                                }}
+                            />
+                            {loginError && (
+                                <div className="text-red-500 text-sm text-center">{loginError}</div>
+                            )}
+                            <Button
+                                variant="default"
+                                className="p-6 w-[300px] mx-auto flex gap-2 items-center justify-center rounded-lg"
+                                onClick={handleBasicLogin}
+                                disabled={isLoggingIn}
+                            >
+                                {isLoggingIn ? (
+                                    <>
+                                        <Spinner className="h-5 w-5 animate-spin" />
+                                        Signing in...
+                                    </>
+                                ) : (
+                                    "Sign In"
+                                )}
+                            </Button>
+                        </div>
+                    ) : useEmailSignIn ? (
                         <EmailSignInContext
                             email={email}
                             setEmail={setEmail}

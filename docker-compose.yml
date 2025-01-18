@@ -25,10 +25,11 @@ services:
       database:
         condition: service_healthy
     # Use the following line to use the latest version of khoj. Otherwise, it will build from source. Set this to ghcr.io/khoj-ai/khoj-cloud:latest if you want to use the prod image.
-    image: ghcr.io/khoj-ai/khoj:latest
+    # image: ghcr.io/khoj-ai/khoj:latest
     # Uncomment the following line to build from source. This will take a few minutes. Comment the next two lines out if you want to use the official image.
-    # build:
-      # context: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
       # If changing the local port (left hand side), no other changes required.
       # If changing the remote port (right hand side),
@@ -44,15 +45,19 @@ services:
       - khoj_models:/root/.cache/huggingface
     # Use 0.0.0.0 to explicitly set the host ip for the service on the container. https://pythonspeed.com/articles/docker-connection-refused/
     environment:
+      # Database config
       - POSTGRES_DB=postgres
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_HOST=database
       - POSTGRES_PORT=5432
+      # Django config
       - KHOJ_DJANGO_SECRET_KEY=secret
       - KHOJ_DEBUG=False
+      # Admin user
       - KHOJ_ADMIN_EMAIL=username@example.com
       - KHOJ_ADMIN_PASSWORD=password
+      # Service URLs
       # Default URL of Terrarium, the Python sandbox used by Khoj to run code. Its container is specified above
       - KHOJ_TERRARIUM_URL=http://sandbox:8080
       # Default URL of SearxNG, the default web search engine used by Khoj. Its container is specified above
@@ -92,7 +97,9 @@ services:
       # Read more at https://docs.khoj.dev/miscellaneous/telemetry
       # - KHOJ_TELEMETRY_DISABLE=True
     # Comment out this line when you're using the official ghcr.io/khoj-ai/khoj-cloud:latest prod image.
-    command: --host="0.0.0.0" --port=42110 -vv --anonymous-mode --non-interactive
+    entrypoint: python3 src/khoj/main.py --host=0.0.0.0 --port=42110 -vv --controlled-access --non-interactive
+    # entrypoint: python3 src/khoj/main.py --host=0.0.0.0 --port=42110 -vv --anonymous-mode --non-interactive
+    # entrypoint: python3 src/khoj/main.py --host=0.0.0.0 --port=42110 -vv --non-interactive
 
 volumes:
   khoj_config:
