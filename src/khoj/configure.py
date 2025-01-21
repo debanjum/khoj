@@ -234,7 +234,7 @@ def configure_server(
 
     if ConversationAdapters.has_valid_ai_model_api():
         ai_model_api = ConversationAdapters.get_ai_model_api()
-        state.openai_client = openai.OpenAI(api_key=ai_model_api.api_key)
+        state.openai_client = openai.OpenAI(api_key=ai_model_api.api_key, base_url=ai_model_api.api_base_url)
 
     # Initialize Search Models from Config and initialize content
     try:
@@ -249,6 +249,7 @@ def configure_server(
                         model.bi_encoder,
                         model.embeddings_inference_endpoint,
                         model.embeddings_inference_endpoint_api_key,
+                        model.embeddings_inference_endpoint_type,
                         query_encode_kwargs=model.bi_encoder_query_encode_config,
                         docs_encode_kwargs=model.bi_encoder_docs_encode_config,
                         model_kwargs=model.bi_encoder_model_config,

@@ -1,6 +1,7 @@
 import csv
 import json
 from datetime import datetime, timedelta
+from urllib.parse import quote
 
 from apscheduler.job import Job
 from django.contrib import admin, messages
@@ -154,8 +155,9 @@ class KhojUserAdmin(UserAdmin, unfold_admin.ModelAdmin):
         for user in queryset:
             if user.email:
                 host = request.get_host()
-                unique_id = user.email_verification_code
-                login_url = f"{host}/auth/magic?code={unique_id}&email={user.email}"
+                otp = quote(user.email_verification_code)
+                encoded_email = quote(user.email)
+                login_url = f"{host}/auth/magic?code={otp}&email={encoded_email}"
                 messages.info(request, f"Email login URL for {user.email}: {login_url}")
 
     get_email_login_url.short_description = "Get email login URL"  # type: ignore

@@ -43,14 +43,14 @@ def initialization(interactive: bool = True):
             "🗣️ Configure chat models available to your server. You can always update these at /server/admin using your admin account"
         )
 
-        openai_api_base = os.getenv("OPENAI_API_BASE")
-        provider = "Ollama" if openai_api_base and openai_api_base.endswith(":11434/v1/") else "OpenAI"
-        openai_api_key = os.getenv("OPENAI_API_KEY", "placeholder" if openai_api_base else None)
+        openai_base_url = os.getenv("OPENAI_BASE_URL")
+        provider = "Ollama" if openai_base_url and openai_base_url.endswith(":11434/v1/") else "OpenAI"
+        openai_api_key = os.getenv("OPENAI_API_KEY", "placeholder" if openai_base_url else None)
         default_chat_models = default_openai_chat_models
-        if openai_api_base:
+        if openai_base_url:
             # Get available chat models from OpenAI compatible API
             try:
-                openai_client = openai.OpenAI(api_key=openai_api_key, base_url=openai_api_base)
+                openai_client = openai.OpenAI(api_key=openai_api_key, base_url=openai_base_url)
                 default_chat_models = [model.id for model in openai_client.models.list()]
                 # Put the available default OpenAI models at the top
                 valid_default_models = [model for model in default_openai_chat_models if model in default_chat_models]
@@ -66,7 +66,7 @@ def initialization(interactive: bool = True):
             ChatModel.ModelType.OPENAI,
             default_chat_models,
             default_api_key=openai_api_key,
-            api_base_url=openai_api_base,
+            api_base_url=openai_base_url,
             vision_enabled=True,
             is_offline=False,
             interactive=interactive,
@@ -267,7 +267,7 @@ def initialization(interactive: bool = True):
                             )
 
                     # Remove models that are no longer available
-                    existing_models.exclude(chat_model__in=available_models).delete()
+                    existing_models.exclude(name__in=available_models).delete()
 
                 except Exception as e:
                     logger.warning(f"Failed to update models for {config.name}: {str(e)}")

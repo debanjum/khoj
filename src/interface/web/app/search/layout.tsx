@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import "../globals.css";
 import { ContentSecurityPolicy } from "../common/layoutHelper";
+import { Toaster } from "@/components/ui/toaster";
 
 export const metadata: Metadata = {
     title: "Khoj AI - Search",
@@ -35,7 +36,10 @@ export default function RootLayout({
     return (
         <html>
             <ContentSecurityPolicy />
-            <body>{children}</body>
+            <body>
+                {children}
+                <Toaster />
+            </body>
         </html>
     );
 }

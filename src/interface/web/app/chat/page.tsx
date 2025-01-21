@@ -354,7 +354,15 @@ export default function Chat() {
         try {
             await readChatStream(response);
         } catch (err) {
-            const apiError = await response.json();
+            let apiError;
+            try {
+                apiError = await response.json();
+            } catch (err) {
+                // Error reading API error response
+                apiError = {
+                    streamError: "Error reading API error response stream. Expected JSON response.",
+                };
+            }
             console.error(apiError);
             // Retrieve latest message being processed
             const currentMessage = messages.find((message) => !message.completed);
@@ -365,7 +373,9 @@ export default function Chat() {
             const errorName = (err as Error).name;
             if (errorMessage.includes("Error in input stream"))
                 currentMessage.rawResponse = `Woops! The connection broke while I was writing my thoughts down. Maybe try again in a bit or dislike this message if the issue persists?`;
-            else if (response.status === 429) {
+            else if (apiError.streamError) {
+                currentMessage.rawResponse = `Umm, not sure what just happened but I lost my train of thought. Could you try again or ask my developers to look into this if the issue persists? They can be contacted at the Khoj Github, Discord or team@khoj.dev.`;
+            } else if (response.status === 429) {
                 "detail" in apiError
                     ? (currentMessage.rawResponse = `${apiError.detail}`)
                     : (currentMessage.rawResponse = `I'm a bit overwhelmed at the moment. Could you try again in a bit or dislike this message if the issue persists?`);

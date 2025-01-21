@@ -194,7 +194,7 @@ Limit your response to 3 sentences max. Be succinct, clear, and informative.
 ## Diagram Generation
 ## --
 
-improve_diagram_description_prompt = PromptTemplate.from_template(
+improve_excalidraw_diagram_description_prompt = PromptTemplate.from_template(
     """
 You are an architect working with a novice digital artist using a diagramming software.
 {personality_context}
@@ -334,6 +334,123 @@ Think about spacing and composition. Use ample space between elements. Double th
 Return a valid JSON object, where the drawing is in `elements` and your thought process is in `scratchpad`. If you can't make the whole diagram in one response, you can split it into multiple responses. If you need to simplify for brevity, simply do so in the `scratchpad` field. DO NOT add additional info in the `elements` field.
 
 Diagram Description: {query}
+
+""".strip()
+)
+
+improve_mermaid_js_diagram_description_prompt = PromptTemplate.from_template(
+    """
+You are a senior architect working with an illustrator using a diagramming software.
+{personality_context}
+
+Given a particular request, you need to translate it to to a detailed description that the illustrator can use to create a diagram.
+
+You can use the following diagram types in your instructions:
+- Flowchart
+- Sequence Diagram
+- Gantt Chart (only for time-based queries after 0 AD)
+- State Diagram
+- Pie Chart
+
+Use these primitives to describe what sort of diagram the drawer should create in natural language, not special syntax. We must recreate the diagram every time, so include all relevant prior information in your description.
+
+- Describe the layout, components, and connections.
+- Use simple, concise language.
+
+Today's Date: {current_date}
+User's Location: {location}
+
+User's Notes:
+{references}
+
+Online References:
+{online_results}
+
+Conversation Log:
+{chat_history}
+
+Query: {query}
+
+Enhanced Description:
+""".strip()
+)
+
+mermaid_js_diagram_generation_prompt = PromptTemplate.from_template(
+    """
+You are a designer with the ability to describe diagrams to compose in professional, fine detail. You dive into the details and make labels, connections, and shapes to represent complex systems.
+{personality_context}
+
+----Goals----
+You need to create a declarative description of the diagram and relevant components, using the Mermaid.js syntax.
+
+You can choose from the following diagram types:
+- Flowchart
+- Sequence Diagram
+- State Diagram
+- Gantt Chart
+- Pie Chart
+
+----Examples----
+---
+title: Node
+---
+
+flowchart LR
+    id["This is the start"] --> id2["This is the end"]
+
+sequenceDiagram
+    Alice->>John: Hello John, how are you?
+    John-->>Alice: Great!
+    Alice-)John: See you later!
+
+stateDiagram-v2
+    [*] --> Still
+    Still --> [*]
+
+    Still --> Moving
+    Moving --> Still
+    Moving --> Crash
+    Crash --> [*]
+
+gantt
+    title A Gantt Diagram
+    dateFormat YYYY-MM-DD
+    section Section
+        A task          :a1, 2014-01-01, 30d
+        Another task    :after a1, 20d
+    section Another
+        Task in Another :2014-01-12, 12d
+        another task    :24d
+
+pie title Pets adopted by volunteers
+    "Dogs" : 10
+    "Cats" : 30
+    "Rats" : 60
+
+flowchart TB
+    subgraph "Group 1"
+        a1["Start Node"] --> a2["End Node"]
+    end
+    subgraph "Group 2"
+        b1["Process 1"] --> b2["Process 2"]
+    end
+    subgraph "Group 3"
+        c1["Input"] --> c2["Output"]
+    end
+    a["Group 1"] --> b["Group 2"]
+    c["Group 3"] --> d["Group 2"]
+
+----Process----
+Create your diagram with great composition and intuitiveness from the provided context and user prompt below.
+- You may use subgraphs to group elements together. Each subgraph must have a title.
+- **You must wrap ALL entity and node labels in double quotes**, example: "My Node Label"
+- **All nodes MUST use the id["label"] format**. For example: node1["My Node Label"]
+- Custom style are not permitted. Default styles only.
+- JUST provide the diagram, no additional text or context. Say nothing else in your response except the diagram.
+- Keep diagrams simple - maximum 15 nodes
+- Every node inside a subgraph MUST use square bracket notation: id["label"]
+
+output: {query}
 
 """.strip()
 )

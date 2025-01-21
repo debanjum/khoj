@@ -48,7 +48,7 @@ Restart your Khoj server after the first run to ensure all settings are applied 
         2. Configure the environment variables in the `docker-compose.yml`
            - Set `KHOJ_ADMIN_PASSWORD`, `KHOJ_DJANGO_SECRET_KEY` (and optionally the `KHOJ_ADMIN_EMAIL`) to something secure. This allows you to customize Khoj later via the admin panel.
            - Set `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY` to your API key if you want to use OpenAI, Anthropic or Gemini commercial chat models respectively.
-           - Uncomment `OPENAI_API_BASE` to use [Ollama](/advanced/ollama?type=first-run&server=docker#setup) running on your host machine. Or set it to the URL of your OpenAI compatible API like vLLM or [LMStudio](/advanced/lmstudio).
+           - Uncomment `OPENAI_BASE_URL` to use [Ollama](/advanced/ollama?type=first-run&server=docker#setup) running on your host machine. Or set it to the URL of your OpenAI compatible API like vLLM or [LMStudio](/advanced/lmstudio).
         3. Start Khoj by running the following command in the same directory as your docker-compose.yml file.
            ```shell
            cd ~/.khoj
@@ -74,7 +74,7 @@ Restart your Khoj server after the first run to ensure all settings are applied 
       2. Configure the environment variables in the `docker-compose.yml`
          - Set `KHOJ_ADMIN_PASSWORD`, `KHOJ_DJANGO_SECRET_KEY` (and optionally the `KHOJ_ADMIN_EMAIL`) to something secure. This allows you to customize Khoj later via the admin panel.
          - Set `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY` to your API key if you want to use OpenAI, Anthropic or Gemini commercial chat models respectively.
-         - Uncomment `OPENAI_API_BASE` to use [Ollama](/advanced/ollama) running on your host machine. Or set it to the URL of your OpenAI compatible API like vLLM or [LMStudio](/advanced/lmstudio).
+         - Uncomment `OPENAI_BASE_URL` to use [Ollama](/advanced/ollama) running on your host machine. Or set it to the URL of your OpenAI compatible API like vLLM or [LMStudio](/advanced/lmstudio).
       3. Start Khoj by running the following command in the same directory as your docker-compose.yml file.
          ```shell
          # Windows users should use their WSL2 terminal to run these commands
@@ -96,7 +96,7 @@ Restart your Khoj server after the first run to ensure all settings are applied 
         2. Configure the environment variables in the `docker-compose.yml`
            - Set `KHOJ_ADMIN_PASSWORD`, `KHOJ_DJANGO_SECRET_KEY` (and optionally the `KHOJ_ADMIN_EMAIL`) to something secure. This allows you to customize Khoj later via the admin panel.
            - Set `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY` to your API key if you want to use OpenAI, Anthropic or Gemini commercial chat models respectively.
-           - Uncomment `OPENAI_API_BASE` to use [Ollama](/advanced/ollama) running on your host machine. Or set it to the URL of your OpenAI compatible API like vLLM or [LMStudio](/advanced/lmstudio).
+           - Uncomment `OPENAI_BASE_URL` to use [Ollama](/advanced/ollama) running on your host machine. Or set it to the URL of your OpenAI compatible API like vLLM or [LMStudio](/advanced/lmstudio).
         3. Start Khoj by running the following command in the same directory as your docker-compose.yml file.
            ```shell
            cd ~/.khoj

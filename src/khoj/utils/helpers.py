@@ -355,7 +355,7 @@ command_descriptions = {
 
 command_descriptions_for_agent = {
     ConversationCommand.General: "Agent can use the agents knowledge base and general knowledge.",
-    ConversationCommand.Notes: "Agent can search the users knowledge base for information.",
+    ConversationCommand.Notes: "Agent can search the personal knowledge base for information, as well as its own.",
     ConversationCommand.Online: "Agent can search the internet for information.",
     ConversationCommand.Webpage: "Agent can read suggested web pages for information.",
     ConversationCommand.Summarize: "Agent can read an entire document. Agents knowledge base must be a single document.",

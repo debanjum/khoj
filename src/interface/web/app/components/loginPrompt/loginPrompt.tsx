@@ -2,7 +2,7 @@
 
 import styles from "./loginPrompt.module.css";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import Autoplay from "embla-carousel-autoplay";
 import {
@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/carousel";
 import { Card, CardContent } from "@/components/ui/card";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
+import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
 
 export interface LoginPromptProps {
     onOpenChange: (open: boolean) => void;
@@ -181,6 +182,9 @@ export default function LoginPrompt(props: LoginPromptProps) {
             <DialogContent
                 className={`flex flex-col gap-4 ${!useEmailSignIn ? "p-0 pb-4 m-0 max-w-xl" : "w-fit"}`}
             >
+                <VisuallyHidden.Root>
+                    <DialogTitle>Login Dialog</DialogTitle>
+                </VisuallyHidden.Root>
                 <div>
                     {useEmailSignIn ? (
                         <EmailSignInContext
@@ -232,7 +236,7 @@ function EmailSignInContext({
     const [numFailures, setNumFailures] = useState(0);
 
     function checkOTPAndRedirect() {
-        const verifyUrl = `/auth/magic?code=${otp}&email=${email}`;
+        const verifyUrl = `/auth/magic?code=${encodeURIComponent(otp)}&email=${encodeURIComponent(email)}`;
 
         if (numFailures >= ALLOWED_OTP_ATTEMPTS) {
             setOTPError("Too many failed attempts. Please try again tomorrow.");

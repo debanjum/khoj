@@ -22,6 +22,7 @@ from starlette.authentication import requires
 from khoj.database import adapters
 from khoj.database.adapters import (
     EntryAdapters,
+    FileObjectAdapters,
     get_user_github_config,
     get_user_notion_config,
 )
@@ -270,6 +271,8 @@ async def delete_content_files(
 
     await EntryAdapters.adelete_entry_by_file(user, filename)
 
+    await FileObjectAdapters.adelete_file_object_by_name(user, filename)
+
     return {"status": "ok"}
 
 
@@ -294,6 +297,8 @@ async def delete_content_file(
     )
 
     deleted_count = await EntryAdapters.adelete_entries_by_filenames(user, files.files)
+    for file in files.files:
+        await FileObjectAdapters.adelete_file_object_by_name(user, file)
 
     return {"status": "ok", "deleted_count": deleted_count}
 
@@ -346,6 +351,77 @@ async def delete_content_type(
 
     enabled_content = await sync_to_async(EntryAdapters.get_unique_file_types)(user)
     return {"status": "ok"}
+
+
+@api_content.get("/files", response_model=Dict[str, str])
+@requires(["authenticated"])
+async def get_all_files(
+    request: Request, client: Optional[str] = None, truncated: Optional[bool] = True, page: int = 0
+):
+    user = request.user.object
+
+    update_telemetry_state(
+        request=request,
+        telemetry_type="api",
+        api="get_all_filenames",
+        client=client,
+    )
+
+    files_data = []
+    page_size = 10
+
+    file_objects = await FileObjectAdapters.aget_all_file_objects(user, start=page * page_size, limit=page_size)
+
+    num_pages = await FileObjectAdapters.aget_number_of_pages(user, page_size)
+
+    for file_object in file_objects:
+        files_data.append(
+            {
+                "file_name": file_object.file_name,
+                "raw_text": file_object.raw_text[:1000] if truncated else file_object.raw_text,
+                "updated_at": str(file_object.updated_at),
+            }
+        )
+
+    data_packet = {
+        "files": files_data,
+        "num_pages": num_pages,
+    }
+
+    return Response(content=json.dumps(data_packet), media_type="application/json", status_code=200)
+
+
+@api_content.get("/file", response_model=Dict[str, str])
+@requires(["authenticated"])
+async def get_file_object(
+    request: Request,
+    file_name: str,
+    client: Optional[str] = None,
+):
+    user = request.user.object
+
+    file_object = (await FileObjectAdapters.aget_file_objects_by_name(user, file_name))[0]
+    if not file_object:
+        return Response(
+            content=json.dumps({"error": "File not found"}),
+            media_type="application/json",
+            status_code=404,
+        )
+
+    update_telemetry_state(
+        request=request,
+        telemetry_type="api",
+        api="get_file",
+        client=client,
+    )
+
+    return Response(
+        content=json.dumps(
+            {"id": file_object.id, "file_name": file_object.file_name, "raw_text": file_object.raw_text}
+        ),
+        media_type="application/json",
+        status_code=200,
+    )
 
 
 @api_content.get("/{content_source}", response_model=List[str])

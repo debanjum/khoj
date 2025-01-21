@@ -418,7 +418,7 @@ export default function ChatHistory(props: ChatHistoryProps) {
                                             conversationId: props.conversationId,
                                             images: message.generatedImages,
                                             queryFiles: message.generatedFiles,
-                                            excalidrawDiagram: message.generatedExcalidrawDiagram,
+                                            mermaidjsDiagram: message.generatedMermaidjsDiagram,
                                             turnId: messageTurnId,
                                         }}
                                         conversationId={props.conversationId}

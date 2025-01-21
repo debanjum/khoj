@@ -229,7 +229,7 @@ function generateImageMarkdown(message, intentType, inferredQueries=null) { //sa
     } else if (intentType === "text-to-image2") {
         imageMarkdown = `![](${message})`;
     } else if (intentType === "text-to-image-v3") {
-        imageMarkdown = `![](data:image/webp;base64,${message})`;
+        imageMarkdown = `![](${message})`;
     }
     const inferredQuery = inferredQueries?.[0];
     if (inferredQuery) {
@@ -423,7 +423,7 @@ function handleImageResponse(imageJson, rawResponse) {
         } else if (imageJson.intentType === "text-to-image2") {
             rawResponse += `![generated_image](${imageJson.image})`;
         } else if (imageJson.intentType === "text-to-image-v3") {
-            rawResponse = `![](data:image/webp;base64,${imageJson.image})`;
+            rawResponse = `![](${imageJson.image})`;
         } else if (imageJson.intentType === "excalidraw") {
             const redirectMessage = `Hey, I'm not ready to show you diagrams yet here. But you can view it in the web app`;
             rawResponse += redirectMessage;

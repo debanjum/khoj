@@ -9,6 +9,7 @@ import uuid
 from typing import Any, Callable, List, Optional, Set, Union
 
 import cron_descriptor
+import openai
 import pytz
 from apscheduler.job import Job
 from apscheduler.triggers.cron import CronTrigger
@@ -264,12 +265,21 @@ async def transcribe(
         if not speech_to_text_config:
             # If the user has not configured a speech to text model, return an unsupported on server error
             status_code = 501
-        elif state.openai_client and speech_to_text_config.model_type == SpeechToTextModelOptions.ModelType.OPENAI:
-            speech2text_model = speech_to_text_config.model_name
-            user_message = await transcribe_audio(audio_file, speech2text_model, client=state.openai_client)
         elif speech_to_text_config.model_type == SpeechToTextModelOptions.ModelType.OFFLINE:
             speech2text_model = speech_to_text_config.model_name
             user_message = await transcribe_audio_offline(audio_filename, speech2text_model)
+        elif speech_to_text_config.model_type == SpeechToTextModelOptions.ModelType.OPENAI:
+            speech2text_model = speech_to_text_config.model_name
+            if speech_to_text_config.ai_model_api:
+                api_key = speech_to_text_config.ai_model_api.api_key
+                api_base_url = speech_to_text_config.ai_model_api.api_base_url
+                openai_client = openai.OpenAI(api_key=api_key, base_url=api_base_url)
+            elif state.openai_client:
+                openai_client = state.openai_client
+            if openai_client:
+                user_message = await transcribe_audio(audio_file, speech2text_model, client=openai_client)
+            else:
+                status_code = 501
     finally:
         # Close and Delete the temporary audio file
         audio_file.close()
@@ -392,7 +402,8 @@ async def extract_references_and_questions(
 
     filters_in_query += " ".join([f'file:"{filter}"' for filter in conversation.file_filters])
     using_offline_chat = False
-    logger.debug(f"Filters in query: {filters_in_query}")
+    if is_none_or_empty(filters_in_query):
+        logger.debug(f"Filters in query: {filters_in_query}")
 
     personality_context = prompts.personality_context.format(personality=agent.personality) if agent else ""
 

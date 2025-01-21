@@ -51,7 +51,7 @@ from khoj.routers.helpers import (
     construct_automation_created_message,
     create_automation,
     gather_raw_query_files,
-    generate_excalidraw_diagram,
+    generate_mermaidjs_diagram,
     generate_summary_from_files,
     get_conversation_command,
     is_query_empty,
@@ -781,20 +781,25 @@ async def chat(
 
         generated_images: List[str] = []
         generated_files: List[FileAttachment] = []
-        generated_excalidraw_diagram: str = None
+        generated_mermaidjs_diagram: str = None
         program_execution_context: List[str] = []
 
         if conversation_commands == [ConversationCommand.Default]:
-            chosen_io = await aget_data_sources_and_output_format(
-                q,
-                meta_log,
-                is_automated_task,
-                user=user,
-                query_images=uploaded_images,
-                agent=agent,
-                query_files=attached_file_context,
-                tracer=tracer,
-            )
+            try:
+                chosen_io = await aget_data_sources_and_output_format(
+                    q,
+                    meta_log,
+                    is_automated_task,
+                    user=user,
+                    query_images=uploaded_images,
+                    agent=agent,
+                    query_files=attached_file_context,
+                    tracer=tracer,
+                )
+            except ValueError as e:
+                logger.error(f"Error getting data sources and output format: {e}. Falling back to default.")
+                conversation_commands = [ConversationCommand.General]
+
             conversation_commands = chosen_io.get("sources") + [chosen_io.get("output")]
 
             # If we're doing research, we don't want to do anything else
@@ -1156,7 +1161,7 @@ async def chat(
             inferred_queries = []
             diagram_description = ""
 
-            async for result in generate_excalidraw_diagram(
+            async for result in generate_mermaidjs_diagram(
                 q=defiltered_query,
                 conversation_history=meta_log,
                 location_data=location,
@@ -1172,12 +1177,12 @@ async def chat(
                 if isinstance(result, dict) and ChatEvent.STATUS in result:
                     yield result[ChatEvent.STATUS]
                 else:
-                    better_diagram_description_prompt, excalidraw_diagram_description = result
-                    if better_diagram_description_prompt and excalidraw_diagram_description:
+                    better_diagram_description_prompt, mermaidjs_diagram_description = result
+                    if better_diagram_description_prompt and mermaidjs_diagram_description:
                         inferred_queries.append(better_diagram_description_prompt)
-                        diagram_description = excalidraw_diagram_description
+                        diagram_description = mermaidjs_diagram_description
 
-                        generated_excalidraw_diagram = diagram_description
+                        generated_mermaidjs_diagram = diagram_description
 
                         generated_asset_results["diagrams"] = {
                             "query": better_diagram_description_prompt,
@@ -1186,7 +1191,7 @@ async def chat(
                         async for result in send_event(
                             ChatEvent.GENERATED_ASSETS,
                             {
-                                "excalidrawDiagram": excalidraw_diagram_description,
+                                "mermaidjsDiagram": mermaidjs_diagram_description,
                             },
                         ):
                             yield result
@@ -1226,7 +1231,7 @@ async def chat(
             raw_query_files,
             generated_images,
             generated_files,
-            generated_excalidraw_diagram,
+            generated_mermaidjs_diagram,
             program_execution_context,
             generated_asset_results,
             tracer,

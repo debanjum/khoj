@@ -152,7 +152,21 @@ class TextToEntries(ABC):
         with timer("Generated embeddings for entries to add to database in", logger):
             entries_to_process = [hash_to_current_entries[hashed_val] for hashed_val in hashes_to_process]
             data_to_embed = [getattr(entry, key) for entry in entries_to_process]
+            modified_files = {entry.file for entry in entries_to_process}
             embeddings += self.embeddings_model[model.name].embed_documents(data_to_embed)
+
+        file_to_file_object_map = {}
+        if file_to_text_map and modified_files:
+            with timer("Indexed text of modified file in", logger):
+                # create or update text of each updated file indexed on DB
+                for modified_file in modified_files:
+                    raw_text = file_to_text_map[modified_file]
+                    file_object = FileObjectAdapters.get_file_object_by_name(user, modified_file)
+                    if file_object:
+                        FileObjectAdapters.update_raw_text(file_object, raw_text)
+                    else:
+                        file_object = FileObjectAdapters.create_file_object(user, modified_file, raw_text)
+                    file_to_file_object_map[modified_file] = file_object
 
         added_entries: list[DbEntry] = []
         with timer("Added entries to database in", logger):
@@ -165,6 +179,7 @@ class TextToEntries(ABC):
                 batch_embeddings_to_create: List[DbEntry] = []
                 for entry_hash, new_entry in entry_batch:
                     entry = hash_to_current_entries[entry_hash]
+                    file_object = file_to_file_object_map.get(entry.file, None)
                     batch_embeddings_to_create.append(
                         DbEntry(
                             user=user,
@@ -178,6 +193,7 @@ class TextToEntries(ABC):
                             hashed_value=entry_hash,
                             corpus_id=entry.corpus_id,
                             search_model=model,
+                            file_object=file_object,
                         )
                     )
                 try:
@@ -189,19 +205,6 @@ class TextToEntries(ABC):
                     )
                     logger.error(f"Error adding entries to database:\n{batch_indexing_error}\n---\n{e}", exc_info=True)
             logger.debug(f"Added {len(added_entries)} {file_type} entries to database")
-
-        if file_to_text_map:
-            with timer("Indexed text of modified file in", logger):
-                # get the set of modified files from added_entries
-                modified_files = {entry.file_path for entry in added_entries}
-                # create or update text of each updated file indexed on DB
-                for modified_file in modified_files:
-                    raw_text = file_to_text_map[modified_file]
-                    file_object = FileObjectAdapters.get_file_object_by_name(user, modified_file)
-                    if file_object:
-                        FileObjectAdapters.update_raw_text(file_object, raw_text)
-                    else:
-                        FileObjectAdapters.create_file_object(user, modified_file, raw_text)
 
         new_dates = []
         with timer("Indexed dates from added entries in", logger):

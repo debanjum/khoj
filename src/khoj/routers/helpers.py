@@ -97,6 +97,7 @@ from khoj.processor.conversation.utils import (
     ChatEvent,
     ThreadedGenerator,
     clean_json,
+    clean_mermaidjs,
     construct_chat_history,
     generate_chatml_messages_with_context,
     save_to_conversation_log,
@@ -823,7 +824,7 @@ async def generate_better_diagram_description(
             elif online_results[result].get("webpages"):
                 simplified_online_results[result] = online_results[result]["webpages"]
 
-    improve_diagram_description_prompt = prompts.improve_diagram_description_prompt.format(
+    improve_diagram_description_prompt = prompts.improve_excalidraw_diagram_description_prompt.format(
         query=q,
         chat_history=chat_history,
         location=location,
@@ -885,6 +886,133 @@ async def generate_excalidraw_diagram_from_description(
             raise AssertionError(f"Invalid response for improving diagram description: {response}")
 
     return response
+
+
+async def generate_mermaidjs_diagram(
+    q: str,
+    conversation_history: Dict[str, Any],
+    location_data: LocationData,
+    note_references: List[Dict[str, Any]],
+    online_results: Optional[dict] = None,
+    query_images: List[str] = None,
+    user: KhojUser = None,
+    agent: Agent = None,
+    send_status_func: Optional[Callable] = None,
+    query_files: str = None,
+    tracer: dict = {},
+):
+    if send_status_func:
+        async for event in send_status_func("**Enhancing the Diagramming Prompt**"):
+            yield {ChatEvent.STATUS: event}
+
+    better_diagram_description_prompt = await generate_better_mermaidjs_diagram_description(
+        q=q,
+        conversation_history=conversation_history,
+        location_data=location_data,
+        note_references=note_references,
+        online_results=online_results,
+        query_images=query_images,
+        user=user,
+        agent=agent,
+        query_files=query_files,
+        tracer=tracer,
+    )
+
+    if send_status_func:
+        async for event in send_status_func(f"**Diagram to Create:**:\n{better_diagram_description_prompt}"):
+            yield {ChatEvent.STATUS: event}
+
+    mermaidjs_diagram_description = await generate_mermaidjs_diagram_from_description(
+        q=better_diagram_description_prompt,
+        user=user,
+        agent=agent,
+        tracer=tracer,
+    )
+
+    inferred_queries = f"Instruction: {better_diagram_description_prompt}"
+
+    yield inferred_queries, mermaidjs_diagram_description
+
+
+async def generate_better_mermaidjs_diagram_description(
+    q: str,
+    conversation_history: Dict[str, Any],
+    location_data: LocationData,
+    note_references: List[Dict[str, Any]],
+    online_results: Optional[dict] = None,
+    query_images: List[str] = None,
+    user: KhojUser = None,
+    agent: Agent = None,
+    query_files: str = None,
+    tracer: dict = {},
+) -> str:
+    """
+    Generate a diagram description from the given query and context
+    """
+
+    today_date = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d, %A")
+    personality_context = (
+        prompts.personality_context.format(personality=agent.personality) if agent and agent.personality else ""
+    )
+
+    location = f"{location_data}" if location_data else "Unknown"
+
+    user_references = "\n\n".join([f"# {item['compiled']}" for item in note_references])
+
+    chat_history = construct_chat_history(conversation_history)
+
+    simplified_online_results = {}
+
+    if online_results:
+        for result in online_results:
+            if online_results[result].get("answerBox"):
+                simplified_online_results[result] = online_results[result]["answerBox"]
+            elif online_results[result].get("webpages"):
+                simplified_online_results[result] = online_results[result]["webpages"]
+
+    improve_diagram_description_prompt = prompts.improve_mermaid_js_diagram_description_prompt.format(
+        query=q,
+        chat_history=chat_history,
+        location=location,
+        current_date=today_date,
+        references=user_references,
+        online_results=simplified_online_results,
+        personality_context=personality_context,
+    )
+
+    with timer("Chat actor: Generate better Mermaid.js diagram description", logger):
+        response = await send_message_to_model_wrapper(
+            improve_diagram_description_prompt,
+            query_images=query_images,
+            user=user,
+            query_files=query_files,
+            tracer=tracer,
+        )
+        response = response.strip()
+        if response.startswith(('"', "'")) and response.endswith(('"', "'")):
+            response = response[1:-1]
+
+    return response
+
+
+async def generate_mermaidjs_diagram_from_description(
+    q: str,
+    user: KhojUser = None,
+    agent: Agent = None,
+    tracer: dict = {},
+) -> str:
+    personality_context = (
+        prompts.personality_context.format(personality=agent.personality) if agent and agent.personality else ""
+    )
+
+    mermaidjs_diagram_generation = prompts.mermaid_js_diagram_generation_prompt.format(
+        personality_context=personality_context,
+        query=q,
+    )
+
+    with timer("Chat actor: Generate Mermaid.js diagram", logger):
+        raw_response = await send_message_to_model_wrapper(query=mermaidjs_diagram_generation, user=user, tracer=tracer)
+        return clean_mermaidjs(raw_response.strip())
 
 
 async def generate_better_image_prompt(
@@ -1224,7 +1352,7 @@ def generate_chat_response(
     raw_query_files: List[FileAttachment] = None,
     generated_images: List[str] = None,
     raw_generated_files: List[FileAttachment] = [],
-    generated_excalidraw_diagram: str = None,
+    generated_mermaidjs_diagram: str = None,
     program_execution_context: List[str] = [],
     generated_asset_results: Dict[str, Dict] = {},
     tracer: dict = {},
@@ -1252,7 +1380,7 @@ def generate_chat_response(
             raw_query_files=raw_query_files,
             generated_images=generated_images,
             raw_generated_files=raw_generated_files,
-            generated_excalidraw_diagram=generated_excalidraw_diagram,
+            generated_mermaidjs_diagram=generated_mermaidjs_diagram,
             tracer=tracer,
         )
 
@@ -1785,7 +1913,7 @@ def scheduled_chat(
     raw_response = requests.post(url, headers=headers, json=json_payload, allow_redirects=False)
 
     # Handle redirect manually if necessary
-    if raw_response.status_code in [301, 302]:
+    if raw_response.status_code in [301, 302, 308]:
         redirect_url = raw_response.headers["Location"]
         logger.info(f"Redirecting to {redirect_url}")
         raw_response = requests.post(redirect_url, headers=headers, json=json_payload)
@@ -1967,7 +2095,7 @@ class MessageProcessor:
         self.raw_response = ""
         self.generated_images = []
         self.generated_files = []
-        self.generated_excalidraw_diagram = []
+        self.generated_mermaidjs_diagram = []
 
     def convert_message_chunk_to_json(self, raw_chunk: str) -> Dict[str, Any]:
         if raw_chunk.startswith("{") and raw_chunk.endswith("}"):
@@ -2014,8 +2142,8 @@ class MessageProcessor:
                         self.generated_images = chunk_data[key]
                     elif key == "files":
                         self.generated_files = chunk_data[key]
-                    elif key == "excalidrawDiagram":
-                        self.generated_excalidraw_diagram = chunk_data[key]
+                    elif key == "mermaidjsDiagram":
+                        self.generated_mermaidjs_diagram = chunk_data[key]
 
     def handle_json_response(self, json_data: Dict[str, str]) -> str | Dict[str, str]:
         if "image" in json_data or "details" in json_data:
@@ -2052,7 +2180,7 @@ async def read_chat_stream(response_iterator: AsyncGenerator[str, None]) -> Dict
         "usage": processor.usage,
         "images": processor.generated_images,
         "files": processor.generated_files,
-        "excalidrawDiagram": processor.generated_excalidraw_diagram,
+        "mermaidjsDiagram": processor.generated_mermaidjs_diagram,
     }
 
 

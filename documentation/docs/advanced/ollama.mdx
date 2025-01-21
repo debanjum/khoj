@@ -32,7 +32,7 @@ Restart your Khoj server after first run or update to the settings below to ensu
          ```bash
          ollama pull llama3.1
          ```
-      3. Uncomment `OPENAI_API_BASE` environment variable in your downloaded Khoj [docker-compose.yml](https://github.com/khoj-ai/khoj/blob/master/docker-compose.yml#:~:text=OPENAI_API_BASE)
+      3. Uncomment `OPENAI_BASE_URL` environment variable in your downloaded Khoj [docker-compose.yml](https://github.com/khoj-ai/khoj/blob/master/docker-compose.yml#:~:text=OPENAI_BASE_URL)
       4. Start Khoj docker for the first time to automatically integrate and load models from the Ollama running on your host machine
          ```bash
          # run below command in the directory where you downloaded the Khoj docker-compose.yml
@@ -46,9 +46,9 @@ Restart your Khoj server after first run or update to the settings below to ensu
          ```bash
          ollama pull llama3.1
          ```
-      3. Set `OPENAI_API_BASE` environment variable to `http://localhost:11434/v1/` in your shell before starting Khoj for the first time
+      3. Set `OPENAI_BASE_URL` environment variable to `http://localhost:11434/v1/` in your shell before starting Khoj for the first time
          ```bash
-         export OPENAI_API_BASE="http://localhost:11434/v1/"
+         export OPENAI_BASE_URL="http://localhost:11434/v1/"
          khoj --anonymous-mode
          ```
       </TabItem>

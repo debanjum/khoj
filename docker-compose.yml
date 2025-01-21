@@ -1,7 +1,6 @@
 services:
   database:
     image: ankane/pgvector
-    restart: always
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -15,10 +14,8 @@ services:
       retries: 5
   sandbox:
     image: ghcr.io/khoj-ai/terrarium:latest
-    restart: unless-stopped
   search:
     image: docker.io/searxng/searxng:latest
-    restart: unless-stopped
     volumes:
       - khoj_search:/etc/searxng
     environment:
@@ -29,7 +26,6 @@ services:
         condition: service_healthy
     # Use the following line to use the latest version of khoj. Otherwise, it will build from source. Set this to ghcr.io/khoj-ai/khoj-cloud:latest if you want to use the prod image.
     image: ghcr.io/khoj-ai/khoj:latest
-    restart: unless-stopped
     # Uncomment the following line to build from source. This will take a few minutes. Comment the next two lines out if you want to use the official image.
     # build:
       # context: .
@@ -63,7 +59,7 @@ services:
       - KHOJ_SEARXNG_URL=http://search:8080
       # Uncomment line below to use with Ollama running on your local machine at localhost:11434.
       # Change URL to use with other OpenAI API compatible providers like VLLM, LMStudio etc.
-      # - OPENAI_API_BASE=http://host.docker.internal:11434/v1/
+      # - OPENAI_BASE_URL=http://host.docker.internal:11434/v1/
       #
       # Uncomment appropriate lines below to use chat models by OpenAI, Anthropic, Google.
       # Ensure you set your provider specific API keys.

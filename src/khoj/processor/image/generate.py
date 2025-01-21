@@ -111,7 +111,7 @@ async def text_to_image(
         image_url = upload_image(webp_image_bytes, user.uuid)
 
     if not image_url:
-        image = base64.b64encode(webp_image_bytes).decode("utf-8")
+        image = f"data:image/webp;base64,{base64.b64encode(webp_image_bytes).decode('utf-8')}"
 
     yield image_url or image, status_code, image_prompt
 
@@ -119,25 +119,27 @@ async def text_to_image(
 def generate_image_with_openai(
     improved_image_prompt: str, text_to_image_config: TextToImageModelConfig, text2image_model: str
 ):
-    "Generate image using OpenAI API"
+    "Generate image using OpenAI (compatible) API"
 
-    # Get the API key from the user's configuration
+    # Get the API config from the user's configuration
+    api_key = None
     if text_to_image_config.api_key:
         api_key = text_to_image_config.api_key
+        openai_client = openai.OpenAI(api_key=api_key)
     elif text_to_image_config.ai_model_api:
         api_key = text_to_image_config.ai_model_api.api_key
+        api_base_url = text_to_image_config.ai_model_api.api_base_url
+        openai_client = openai.OpenAI(api_key=api_key, base_url=api_base_url)
     elif state.openai_client:
-        api_key = state.openai_client.api_key
-    auth_header = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        openai_client = state.openai_client
 
     # Generate image using OpenAI API
     OPENAI_IMAGE_GEN_STYLE = "vivid"
-    response = state.openai_client.images.generate(
+    response = openai_client.images.generate(
         prompt=improved_image_prompt,
         model=text2image_model,
         style=OPENAI_IMAGE_GEN_STYLE,
         response_format="b64_json",
-        extra_headers=auth_header,
     )
 
     # Extract the base64 image from the response

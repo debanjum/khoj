@@ -1288,7 +1288,7 @@ class ConversationAdapters:
 
     @staticmethod
     async def get_speech_to_text_config():
-        return await SpeechToTextModelOptions.objects.filter().afirst()
+        return await SpeechToTextModelOptions.objects.filter().prefetch_related("ai_model_api").afirst()
 
     @staticmethod
     @arequire_valid_user
@@ -1485,9 +1485,16 @@ class FileObjectAdapters:
         return await sync_to_async(list)(FileObject.objects.filter(user=user, file_name__in=file_names))
 
     @staticmethod
-    @arequire_valid_user
-    async def aget_all_file_objects(user: KhojUser):
-        return await sync_to_async(list)(FileObject.objects.filter(user=user))
+    @require_valid_user
+    async def aget_all_file_objects(user: KhojUser, start: int = 0, limit: int = 10):
+        query = FileObject.objects.filter(user=user).order_by("-updated_at")[start : start + limit]
+        return await sync_to_async(list)(query)
+
+    @staticmethod
+    @require_valid_user
+    async def aget_number_of_pages(user: KhojUser, limit: int = 10):
+        count = await FileObject.objects.filter(user=user).acount()
+        return math.ceil(count / limit)
 
     @staticmethod
     @arequire_valid_user

@@ -1,6 +1,6 @@
 {
     "name": "khoj-ai",
-    "version": "1.33.2",
+    "version": "1.34.0",
     "private": true,
     "scripts": {
         "dev": "next dev",
@@ -53,12 +53,13 @@
         "eslint-config-next": "14.2.3",
         "input-otp": "^1.2.4",
         "intl-tel-input": "^23.8.1",
-        "katex": "^0.16.10",
+        "katex": "^0.16.21",
         "libphonenumber-js": "^1.11.4",
         "lucide-react": "^0.468.0",
         "markdown-it": "^14.1.0",
         "markdown-it-highlightjs": "^4.1.0",
-        "next": "14.2.15",
+        "mermaid": "^11.4.1",
+        "next": "14.2.21",
         "nodemon": "^3.1.3",
         "postcss": "^8.4.38",
         "react": "^18",

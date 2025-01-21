@@ -94,3 +94,33 @@ export function useDebounce<T>(value: T, delay: number): T {
 
     return debouncedValue;
 }
+
+export const formatDateTime = (isoString: string): string => {
+    try {
+        const date = new Date(isoString);
+        const now = new Date();
+        const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / 60000);
+
+        // Show relative time for recent dates
+        if (diffInMinutes < 1) return "just now";
+        if (diffInMinutes < 60) return `${diffInMinutes} minutes ago`;
+        if (diffInMinutes < 120) return "1 hour ago";
+        if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)} hours ago`;
+
+        // For older dates, show full formatted date
+        const formatter = new Intl.DateTimeFormat("en-US", {
+            month: "long",
+            day: "numeric",
+            year: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+            hour12: true,
+            timeZoneName: "short",
+        });
+
+        return formatter.format(date);
+    } catch (error) {
+        console.error("Error formatting date:", error);
+        return isoString;
+    }
+};

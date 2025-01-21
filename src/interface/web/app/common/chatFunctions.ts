@@ -19,7 +19,7 @@ export interface MessageMetadata {
 
 export interface GeneratedAssetsData {
     images: string[];
-    excalidrawDiagram: string;
+    mermaidjsDiagram: string;
     files: AttachedFileText[];
 }
 
@@ -114,8 +114,8 @@ export function processMessageChunk(
             currentMessage.generatedImages = generatedAssets.images;
         }
 
-        if (generatedAssets.excalidrawDiagram) {
-            currentMessage.generatedExcalidrawDiagram = generatedAssets.excalidrawDiagram;
+        if (generatedAssets.mermaidjsDiagram) {
+            currentMessage.generatedMermaidjsDiagram = generatedAssets.mermaidjsDiagram;
         }
 
         if (generatedAssets.files) {

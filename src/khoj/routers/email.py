@@ -1,5 +1,6 @@
 import logging
 import os
+from urllib.parse import quote
 
 import markdown_it
 import resend
@@ -29,7 +30,7 @@ def is_resend_enabled():
 
 
 async def send_magic_link_email(email, unique_id, host):
-    sign_in_link = f"{host}auth/magic?code={unique_id}&email={email}"
+    sign_in_link = f"{host}auth/magic?code={quote(unique_id)}&email={quote(email)}"
 
     if not is_resend_enabled():
         logger.debug(f"Email sending disabled. Share this sign-in link with the user: {sign_in_link}")

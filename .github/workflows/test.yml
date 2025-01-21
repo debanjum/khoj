@@ -26,7 +26,7 @@ jobs:
   test:
     name: Run Tests
     runs-on: ubuntu-latest
-    container: ubuntu:jammy
+    container: ubuntu:latest
     strategy:
       fail-fast: false
       matrix:
@@ -67,19 +67,19 @@ jobs:
         env:
           DEBIAN_FRONTEND: noninteractive
         run : |
-          apt install -y postgresql postgresql-client && apt install -y postgresql-server-dev-14
+          apt install -y postgresql postgresql-client && apt install -y postgresql-server-dev-16
 
       - name: ⬇️ Install pip
         run: |
           apt install -y python3-pip
-          python -m ensurepip --upgrade
-          python -m pip install --upgrade pip
+          python3 -m ensurepip --upgrade
+          python3 -m pip install --upgrade pip
 
       - name: ⬇️ Install Application
         env:
           PIP_EXTRA_INDEX_URL: "https://download.pytorch.org/whl/cpu https://abetlen.github.io/llama-cpp-python/whl/cpu"
           CUDA_VISIBLE_DEVICES: ""
-        run: sed -i 's/dynamic = \["version"\]/version = "0.0.0"/' pyproject.toml && pip install --upgrade .[dev]
+        run: sed -i 's/dynamic = \["version"\]/version = "0.0.0"/' pyproject.toml && pip install --break-system-packages --upgrade .[dev]
 
       - name: 🧪 Test Application
         env:

@@ -3,11 +3,11 @@ from typing import List
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
-from django.db.models import Count, Q
+from django.db.models import Q
 from tqdm import tqdm
 
 from khoj.database.adapters import get_default_search_model
-from khoj.database.models import Agent, Entry, KhojUser, SearchModelConfig
+from khoj.database.models import Entry, SearchModelConfig
 from khoj.processor.embeddings import EmbeddingsModel
 
 logging.basicConfig(level=logging.INFO)
@@ -74,6 +74,7 @@ class Command(BaseCommand):
                         model.bi_encoder,
                         model.embeddings_inference_endpoint,
                         model.embeddings_inference_endpoint_api_key,
+                        model.embeddings_inference_endpoint_type,
                         query_encode_kwargs=model.bi_encoder_query_encode_config,
                         docs_encode_kwargs=model.bi_encoder_docs_encode_config,
                         model_kwargs=model.bi_encoder_model_config,

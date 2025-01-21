@@ -1,6 +1,8 @@
 import logging
 from typing import List
+from urllib.parse import urlparse
 
+import openai
 import requests
 import tqdm
 from sentence_transformers import CrossEncoder, SentenceTransformer
@@ -13,7 +15,14 @@ from tenacity import (
 )
 from torch import nn
 
-from khoj.utils.helpers import fix_json_dict, get_device, merge_dicts, timer
+from khoj.database.models import SearchModelConfig
+from khoj.utils.helpers import (
+    fix_json_dict,
+    get_device,
+    get_openai_client,
+    merge_dicts,
+    timer,
+)
 from khoj.utils.rawconfig import SearchResponse
 
 logger = logging.getLogger(__name__)
@@ -25,6 +34,7 @@ class EmbeddingsModel:
         model_name: str = "thenlper/gte-small",
         embeddings_inference_endpoint: str = None,
         embeddings_inference_endpoint_api_key: str = None,
+        embeddings_inference_endpoint_type=SearchModelConfig.ApiType.LOCAL,
         query_encode_kwargs: dict = {},
         docs_encode_kwargs: dict = {},
         model_kwargs: dict = {},
@@ -37,15 +47,16 @@ class EmbeddingsModel:
         self.model_name = model_name
         self.inference_endpoint = embeddings_inference_endpoint
         self.api_key = embeddings_inference_endpoint_api_key
-        with timer(f"Loaded embedding model {self.model_name}", logger):
-            self.embeddings_model = SentenceTransformer(self.model_name, **self.model_kwargs)
-
-    def inference_server_enabled(self) -> bool:
-        return self.api_key is not None and self.inference_endpoint is not None
+        self.inference_endpoint_type = embeddings_inference_endpoint_type
+        if self.inference_endpoint_type == SearchModelConfig.ApiType.LOCAL:
+            with timer(f"Loaded embedding model {self.model_name}", logger):
+                self.embeddings_model = SentenceTransformer(self.model_name, **self.model_kwargs)
 
     def embed_query(self, query):
-        if self.inference_server_enabled():
-            return self.embed_with_api([query])[0]
+        if self.inference_endpoint_type == SearchModelConfig.ApiType.HUGGINGFACE:
+            return self.embed_with_hf([query])[0]
+        elif self.inference_endpoint_type == SearchModelConfig.ApiType.OPENAI:
+            return self.embed_with_openai([query])[0]
         return self.embeddings_model.encode([query], **self.query_encode_kwargs)[0]
 
     @retry(
@@ -54,7 +65,7 @@ class EmbeddingsModel:
         stop=stop_after_attempt(5),
         before_sleep=before_sleep_log(logger, logging.DEBUG),
     )
-    def embed_with_api(self, docs):
+    def embed_with_hf(self, docs):
         payload = {"inputs": docs}
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -71,23 +82,38 @@ class EmbeddingsModel:
             raise e
         return response.json()["embeddings"]
 
+    @retry(
+        retry=retry_if_exception_type(requests.exceptions.HTTPError),
+        wait=wait_random_exponential(multiplier=1, max=10),
+        stop=stop_after_attempt(5),
+        before_sleep=before_sleep_log(logger, logging.DEBUG),
+    )
+    def embed_with_openai(self, docs):
+        client = get_openai_client(self.api_key, self.inference_endpoint)
+        response = client.embeddings.create(input=docs, model=self.model_name, encoding_format="float")
+        return [item.embedding for item in response.data]
+
     def embed_documents(self, docs):
-        if self.inference_server_enabled():
-            if "huggingface" not in self.inference_endpoint:
-                logger.warning(
-                    f"Unsupported inference endpoint: {self.inference_endpoint}. Only HuggingFace supported. Generating embeddings on device instead."
-                )
-                return self.embeddings_model.encode(docs, **self.docs_encode_kwargs).tolist()
-            # break up the docs payload in chunks of 1000 to avoid hitting rate limits
-            embeddings = []
-            with tqdm.tqdm(total=len(docs)) as pbar:
-                for i in range(0, len(docs), 1000):
-                    docs_to_embed = docs[i : i + 1000]
-                    generated_embeddings = self.embed_with_api(docs_to_embed)
-                    embeddings += generated_embeddings
-                    pbar.update(1000)
-            return embeddings
-        return self.embeddings_model.encode(docs, **self.docs_encode_kwargs).tolist() if docs else []
+        if self.inference_endpoint_type == SearchModelConfig.ApiType.LOCAL:
+            return self.embeddings_model.encode(docs, **self.docs_encode_kwargs).tolist() if docs else []
+        elif self.inference_endpoint_type == SearchModelConfig.ApiType.HUGGINGFACE:
+            embed_with_api = self.embed_with_hf
+        elif self.inference_endpoint_type == SearchModelConfig.ApiType.OPENAI:
+            embed_with_api = self.embed_with_openai
+        else:
+            logger.warning(
+                f"Unsupported inference endpoint: {self.inference_endpoint_type}. Generating embeddings locally instead."
+            )
+            return self.embeddings_model.encode(docs, **self.docs_encode_kwargs).tolist()
+        # break up the docs payload in chunks of 1000 to avoid hitting rate limits
+        embeddings = []
+        with tqdm.tqdm(total=len(docs)) as pbar:
+            for i in range(0, len(docs), 1000):
+                docs_to_embed = docs[i : i + 1000]
+                generated_embeddings = embed_with_api(docs_to_embed)
+                embeddings += generated_embeddings
+                pbar.update(1000)
+        return embeddings
 
 
 class CrossEncoderModel:
