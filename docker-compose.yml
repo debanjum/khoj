@@ -14,6 +14,11 @@ services:
       retries: 5
   sandbox:
     image: ghcr.io/khoj-ai/terrarium:latest
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 2
   search:
     image: docker.io/searxng/searxng:latest
     volumes:

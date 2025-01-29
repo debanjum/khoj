@@ -1,8 +1,10 @@
+import asyncio
 import base64
 import datetime
 import logging
 import mimetypes
 import os
+from functools import wraps
 from pathlib import Path
 from typing import Any, Callable, List, NamedTuple, Optional
 
@@ -144,6 +146,28 @@ async def generate_python_code(
     return GeneratedCode(code, input_files, input_links)
 
 
+def async_retry_with_backoff(retries=3, backoff_in_seconds=1):
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            retry_count = 0
+            while retry_count < retries:
+                try:
+                    return await func(*args, **kwargs)
+                except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                    retry_count += 1
+                    if retry_count == retries:
+                        raise e
+                    wait_time = backoff_in_seconds * (2 ** (retry_count - 1))  # exponential backoff
+                    await asyncio.sleep(wait_time)
+            return await func(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
+@async_retry_with_backoff(retries=3, backoff_in_seconds=1)
 async def execute_sandboxed_python(code: str, input_data: list[dict], sandbox_url: str = SANDBOX_URL) -> dict[str, Any]:
     """
     Takes code to run as a string and calls the terrarium API to execute it.
@@ -157,7 +181,7 @@ async def execute_sandboxed_python(code: str, input_data: list[dict], sandbox_ur
     data = {"code": cleaned_code, "files": input_data}
 
     async with aiohttp.ClientSession() as session:
-        async with session.post(sandbox_url, json=data, headers=headers) as response:
+        async with session.post(sandbox_url, json=data, headers=headers, timeout=30) as response:
             if response.status == 200:
                 result: dict[str, Any] = await response.json()
                 result["code"] = cleaned_code
