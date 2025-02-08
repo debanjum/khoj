@@ -440,7 +440,7 @@ let titleBarStyle = process.platform === 'win32' ? 'default' : 'hidden';
 const {globalShortcut, clipboard} = require('electron'); // global shortcut and clipboard dependencies for shortcut window
 const openShortcutWindowKeyBind = 'CommandOrControl+Shift+K'
 
-const createWindow = (tab = 'settings.html') => {
+const createWindow = (tab = '') => {
     win = new BrowserWindow({
       width: 800,
       height: 800,
@@ -494,7 +494,10 @@ const createWindow = (tab = 'settings.html') => {
 
     job.start();
 
-    win.loadFile(tab)
+    const isWebApp = !tab?.endsWith('.html');
+    const webAppBaseUrl = store.get('hostURL') || KHOJ_URL;
+    const pageUrl = `${webAppBaseUrl}/${tab}`;
+    isWebApp ? win.loadURL(pageUrl) : win.loadFile(tab);
 
     if (firstRun === true) {
         firstRun = false;
@@ -660,7 +663,7 @@ app.whenReady().then(() => {
             globalShortcut.unregister('Escape');
         });
         ipcMain.on('continue-conversation-button-clicked', () => {
-            openWindow('settings.html');
+            openWindow();
             if (shortcutWin && !shortcutWin.isDestroyed()) {
                 shortcutWin.close();
             }
@@ -721,11 +724,15 @@ function openAboutWindow() {
 
 let tray
 
-openWindow = (page) => {
+openWindow = (page = '') => {
     if (BrowserWindow.getAllWindows().length === 0) {
         createWindow(page);
     } else {
-        win.loadFile(page); win.show();
+        const isWebApp = !page?.endsWith('.html');
+        const webAppBaseUrl = store.get('hostURL') || KHOJ_URL;
+        const pageUrl = isWebApp ? `${webAppBaseUrl}/${page}` : page;
+        isWebApp ? win.loadURL(pageUrl) : win.loadFile(pageUrl);
+        win.show();
     }
 }
 
@@ -735,6 +742,8 @@ app.whenReady().then(() => {
     tray = new Tray(icon)
 
     const contextMenu = Menu.buildFromTemplate([
+        { label: 'Chat', type: 'normal', click: () => { openWindow(); }},
+        { label: 'Search', type: 'normal', click: () => { openWindow('search') }},
         { label: 'Configure', type: 'normal', click: () => { openWindow('settings.html') }},
         { type: 'separator' },
         { label: 'About Khoj', type: 'normal', click: () => { openAboutWindow(); } },
