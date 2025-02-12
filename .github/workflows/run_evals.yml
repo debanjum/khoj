@@ -147,7 +147,7 @@ jobs:
           echo "## Evaluation Summary of Khoj on ${{ matrix.dataset }} in ${{ matrix.khoj_mode }} mode" >> $GITHUB_STEP_SUMMARY
           echo "**$(head -n 1 *_evaluation_summary_*.txt)**" >> $GITHUB_STEP_SUMMARY
           echo "- Khoj Version: ${{ steps.hatch.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Chat Model: Gemini 1.5 Flash 002" >> $GITHUB_STEP_SUMMARY
+          echo "- Chat Model: Gemini 2.0 Flash" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           tail -n +2 *_evaluation_summary_*.txt >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY

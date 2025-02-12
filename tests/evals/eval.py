@@ -629,7 +629,7 @@ def main():
         response_evaluator = evaluate_response_with_mcq_match
     elif args.dataset == "math500":
         response_evaluator = partial(
-            evaluate_response_with_gemini, eval_model=os.getenv("GEMINI_EVAL_MODEL", "gemini-1.5-flash-002")
+            evaluate_response_with_gemini, eval_model=os.getenv("GEMINI_EVAL_MODEL", "gemini-2.0-flash-001")
         )
     elif args.dataset == "frames_ir":
         response_evaluator = evaluate_response_for_ir
