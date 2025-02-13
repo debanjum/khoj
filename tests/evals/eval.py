@@ -1,13 +1,11 @@
 import argparse
 import base64
 import concurrent.futures
-import hashlib
 import json
 import logging
 import os
 import re
 import time
-import uuid
 from datetime import datetime
 from functools import partial
 from io import StringIO
@@ -553,6 +551,7 @@ def process_batch(batch, batch_start, results, dataset_length, response_evaluato
 ---------
 Decision: {colored_decision}
 Accuracy: {running_accuracy:.2%}
+Progress: {running_total_count.get()/dataset_length:.2%}
 Question: {prompt}
 Expected Answer: {answer}
 Agent Answer: {agent_response}
