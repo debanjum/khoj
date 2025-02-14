@@ -114,7 +114,7 @@ jobs:
 
           # Start code sandbox
           npm install -g pm2
-          npm run ci --prefix terrarium
+          NODE_ENV=production npm run ci --prefix terrarium
 
           # Wait for server to be ready
           timeout=120

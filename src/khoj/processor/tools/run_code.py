@@ -100,7 +100,13 @@ async def run_code(
             logger.info(f"Executed Code\n----\n{code}\n----\nResult\n----\n{cleaned_result}\n----")
             yield {query: {"code": code, "results": result}}
     except asyncio.TimeoutError as e:
-        raise ValueError(f"Failed to run code for {query} with Timeout error: {e}")
+        # Call the sandbox_url/stop GET API endpoint to stop the code sandbox
+        error = f"Failed to run code for {query} with Timeout error: {e}"
+        try:
+            await aiohttp.ClientSession().get(f"{sandbox_url}/stop", timeout=5)
+        except Exception as e:
+            error += f"\n\nFailed to stop code sandbox with error: {e}"
+        raise ValueError(error)
     except Exception as e:
         raise ValueError(f"Failed to run code for {query} with error: {e}")
 
