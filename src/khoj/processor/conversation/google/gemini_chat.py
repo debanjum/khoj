@@ -34,7 +34,7 @@ def extract_questions_gemini(
     model: Optional[str] = "gemini-2.0-flash",
     conversation_log={},
     api_key=None,
-    temperature=0,
+    temperature=0.2,
     max_tokens=None,
     location_data: LocationData = None,
     user: KhojUser = None,
@@ -121,7 +121,7 @@ def gemini_send_message_to_model(
     api_key,
     model,
     response_type="text",
-    temperature=0,
+    temperature=0.2,
     model_kwargs=None,
     tracer={},
 ):
