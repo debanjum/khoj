@@ -185,16 +185,18 @@ def initialization(interactive: bool = True):
         )
         provider_name = provider_name or model_type.name.capitalize()
 
-        default_use_model = {True: "y", False: "n"}[default_api_key is not None]
-
-        # If not in interactive mode & in the offline setting, it's most likely that we're running in a containerized environment. This usually means there's not enough RAM to load offline models directly within the application. In such cases, we default to not using the model -- it's recommended to use another service like Ollama to host the model locally in that case.
-        default_use_model = {True: "n", False: default_use_model}[is_offline]
+        default_use_model = default_api_key is not None
+        # If not in interactive mode & in the offline setting, it's most likely that we're running in a containerized environment.
+        # This usually means there's not enough RAM to load offline models directly within the application.
+        # In such cases, we default to not using the model -- it's recommended to use another service like Ollama to host the model locally in that case.
+        if is_offline:
+            default_use_model = False
 
         use_model_provider = (
-            default_use_model if not interactive else input(f"Add {provider_name} chat models? (y/n): ")
+            default_use_model if not interactive else input(f"Add {provider_name} chat models? (y/n): ") == "y"
         )
 
-        if use_model_provider != "y":
+        if not use_model_provider:
             return False, None
 
         logger.info(f"️💬 Setting up your {provider_name} chat configuration")
@@ -303,4 +305,19 @@ def initialization(interactive: bool = True):
                 logger.error(f"🚨 Failed to create chat configuration: {e}", exc_info=True)
     else:
         _update_chat_model_options()
-        logger.info("🗣️ Chat model configuration updated")
+        logger.info("🗣️ Chat model options updated")
+
+    # Update the default chat model if it doesn't match
+    chat_config = ConversationAdapters.get_default_chat_model()
+    env_default_chat_model = os.getenv("KHOJ_CHAT_MODEL")
+    if not chat_config or not env_default_chat_model:
+        return
+    if chat_config.name != env_default_chat_model:
+        chat_model = ConversationAdapters.get_chat_model_by_name(env_default_chat_model)
+        if not chat_model:
+            logger.error(
+                f"🚨 Not setting default chat model. Chat model {env_default_chat_model} not found in existing chat model options."
+            )
+            return
+        ConversationAdapters.set_default_chat_model(chat_model)
+        logger.info(f"🗣️ Default chat model set to {chat_model.name}")

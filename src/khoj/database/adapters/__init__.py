@@ -1108,6 +1108,12 @@ class ConversationAdapters:
         return ConversationAdapters.aget_advanced_chat_model(user)
 
     @staticmethod
+    def get_chat_model_by_name(chat_model_name: str, ai_model_api_name: str = None):
+        if ai_model_api_name:
+            return ChatModel.objects.filter(name=chat_model_name, ai_model_api__name=ai_model_api_name).first()
+        return ChatModel.objects.filter(name=chat_model_name).first()
+
+    @staticmethod
     async def aget_voice_model_config(user: KhojUser) -> Optional[VoiceModelOption]:
         voice_model_config = await UserVoiceModelConfig.objects.filter(user=user).prefetch_related("setting").afirst()
         if voice_model_config:
@@ -1204,6 +1210,15 @@ class ConversationAdapters:
         if server_chat_settings is not None and server_chat_settings.chat_advanced is not None:
             return server_chat_settings.chat_advanced
         return await ConversationAdapters.aget_default_chat_model(user)
+
+    @staticmethod
+    def set_default_chat_model(chat_model: ChatModel):
+        server_chat_settings = ServerChatSettings.objects.first()
+        if server_chat_settings:
+            server_chat_settings.chat_default = chat_model
+            server_chat_settings.save()
+        else:
+            ServerChatSettings.objects.create(chat_default=chat_model)
 
     @staticmethod
     async def aget_server_webscraper():

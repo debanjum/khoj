@@ -666,7 +666,7 @@ def main():
     colored_accuracy_str = f"Overall Accuracy: {colored_accuracy} on {args.dataset.title()} dataset."
     accuracy_str = f"Overall Accuracy: {accuracy:.2%} on {args.dataset}."
     accuracy_by_reasoning = f"Accuracy by Reasoning Type:\n{reasoning_type_accuracy}"
-    cost = f"Total Cost: ${running_cost.get():.5f}."
+    cost = f"Total Cost: ${running_cost.get():.5f} to evaluate {running_total_count.get()} results."
     sample_type = f"Sampling Type: {SAMPLE_SIZE} samples." if SAMPLE_SIZE else "Whole dataset."
     sample_type += " Randomized." if RANDOMIZE else ""
     logger.info(f"\n{colored_accuracy_str}\n\n{accuracy_by_reasoning}\n\n{cost}\n\n{sample_type}\n")
