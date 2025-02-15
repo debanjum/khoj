@@ -4,10 +4,12 @@ import datetime
 import logging
 import mimetypes
 import os
+import re
 from pathlib import Path
 from typing import Any, Callable, List, NamedTuple, Optional
 
 import aiohttp
+from asgiref.sync import sync_to_async
 from httpx import RemoteProtocolError
 from tenacity import (
     before_sleep_log,
@@ -24,7 +26,6 @@ from khoj.processor.conversation.utils import (
     ChatEvent,
     clean_code_python,
     construct_chat_history,
-    load_complex_json,
 )
 from khoj.routers.helpers import send_message_to_model_wrapper
 from khoj.utils.helpers import (
@@ -43,8 +44,7 @@ SANDBOX_URL = os.getenv("KHOJ_TERRARIUM_URL", "http://localhost:8080")
 
 class GeneratedCode(NamedTuple):
     code: str
-    input_files: List[str]
-    input_links: List[str]
+    input_files: List[FileObject]
 
 
 async def run_code(
@@ -82,13 +82,10 @@ async def run_code(
 
     # Prepare Input Data
     input_data = []
-    user_input_files: List[FileObject] = []
-    for input_file in generated_code.input_files:
-        user_input_files += await FileObjectAdapters.aget_file_objects_by_name(user, input_file)
-    for f in user_input_files:
+    for f in generated_code.input_files:
         input_data.append(
             {
-                "filename": os.path.basename(f.file_name),
+                "filename": f.file_name,
                 "b64_data": base64.b64encode(f.raw_text.encode("utf-8")).decode("utf-8"),
             }
         )
@@ -155,21 +152,35 @@ async def generate_python_code(
     response = await send_message_to_model_wrapper(
         code_generation_prompt,
         query_images=query_images,
-        response_type="json_object",
         user=user,
         tracer=tracer,
         query_files=query_files,
     )
 
-    # Validate that the response is a non-empty, JSON-serializable list
-    response = load_complex_json(response)
-    code = response.get("code", "").strip()
-    input_files = response.get("input_files", [])
-    input_links = response.get("input_links", [])
+    # Extract python code wrapped in markdown code blocs from the response
+    code_blocks = re.findall(r"```(?:python)?\n(.*?)\n```", response, re.DOTALL)
+
+    if not code_blocks:
+        raise ValueError("No Python code blocks found in response")
+
+    # Join multiple code blocks with newlines and strip any leading/trailing whitespace
+    code = "\n".join(code_blocks).strip()
 
     if not isinstance(code, str) or is_none_or_empty(code):
         raise ValueError
-    return GeneratedCode(code, input_files, input_links)
+
+    # Infer user files required in sandbox based on user file paths mentioned in code
+    input_files: List[FileObject] = []
+    user_files = await sync_to_async(set)(FileObjectAdapters.get_all_file_objects(user))
+    for user_file in user_files:
+        if user_file.file_name in code:
+            # Replace references to full file path used in code with just the file basename to ease reference in sandbox
+            file_basename = os.path.basename(user_file.file_name)
+            code = code.replace(user_file.file_name, file_basename)
+            user_file.file_name = file_basename
+            input_files.append(user_file)
+
+    return GeneratedCode(code, input_files)
 
 
 @retry(
