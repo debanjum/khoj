@@ -1,13 +1,11 @@
 import argparse
 import base64
 import concurrent.futures
-import hashlib
 import json
 import logging
 import os
 import re
 import time
-import uuid
 from datetime import datetime
 from functools import partial
 from io import StringIO
@@ -553,6 +551,7 @@ def process_batch(batch, batch_start, results, dataset_length, response_evaluato
 ---------
 Decision: {colored_decision}
 Accuracy: {running_accuracy:.2%}
+Progress: {running_total_count.get()/dataset_length:.2%}
 Question: {prompt}
 Expected Answer: {answer}
 Agent Answer: {agent_response}
@@ -630,7 +629,7 @@ def main():
         response_evaluator = evaluate_response_with_mcq_match
     elif args.dataset == "math500":
         response_evaluator = partial(
-            evaluate_response_with_gemini, eval_model=os.getenv("GEMINI_EVAL_MODEL", "gemini-1.5-flash-002")
+            evaluate_response_with_gemini, eval_model=os.getenv("GEMINI_EVAL_MODEL", "gemini-2.0-flash-001")
         )
     elif args.dataset == "frames_ir":
         response_evaluator = evaluate_response_for_ir
@@ -667,7 +666,7 @@ def main():
     colored_accuracy_str = f"Overall Accuracy: {colored_accuracy} on {args.dataset.title()} dataset."
     accuracy_str = f"Overall Accuracy: {accuracy:.2%} on {args.dataset}."
     accuracy_by_reasoning = f"Accuracy by Reasoning Type:\n{reasoning_type_accuracy}"
-    cost = f"Total Cost: ${running_cost.get():.5f}."
+    cost = f"Total Cost: ${running_cost.get():.5f} to evaluate {running_total_count.get()} results."
     sample_type = f"Sampling Type: {SAMPLE_SIZE} samples." if SAMPLE_SIZE else "Whole dataset."
     sample_type += " Randomized." if RANDOMIZE else ""
     logger.info(f"\n{colored_accuracy_str}\n\n{accuracy_by_reasoning}\n\n{cost}\n\n{sample_type}\n")

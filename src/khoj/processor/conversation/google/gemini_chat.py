@@ -31,10 +31,10 @@ logger = logging.getLogger(__name__)
 
 def extract_questions_gemini(
     text,
-    model: Optional[str] = "gemini-1.5-flash",
+    model: Optional[str] = "gemini-2.0-flash",
     conversation_log={},
     api_key=None,
-    temperature=0,
+    temperature=0.2,
     max_tokens=None,
     location_data: LocationData = None,
     user: KhojUser = None,
@@ -121,7 +121,7 @@ def gemini_send_message_to_model(
     api_key,
     model,
     response_type="text",
-    temperature=0,
+    temperature=0.2,
     model_kwargs=None,
     tracer={},
 ):
@@ -132,9 +132,9 @@ def gemini_send_message_to_model(
 
     model_kwargs = {}
 
-    # Sometimes, this causes unwanted behavior and terminates response early. Disable for now while it's flaky.
-    # if response_type == "json_object":
-    #     model_kwargs["response_mime_type"] = "application/json"
+    # This caused unwanted behavior and terminates response early for gemini 1.5 series. Monitor for flakiness with 2.0 series.
+    if response_type == "json_object" and model in ["gemini-2.0-flash"]:
+        model_kwargs["response_mime_type"] = "application/json"
 
     # Get Response from Gemini
     return gemini_completion_with_backoff(
@@ -154,7 +154,7 @@ def converse_gemini(
     online_results: Optional[Dict[str, Dict]] = None,
     code_results: Optional[Dict[str, Dict]] = None,
     conversation_log={},
-    model: Optional[str] = "gemini-1.5-flash",
+    model: Optional[str] = "gemini-2.0-flash",
     api_key: Optional[str] = None,
     temperature: float = 0.2,
     completion_func=None,
