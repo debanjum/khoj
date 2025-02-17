@@ -1,9 +1,10 @@
-import { ItemView, MarkdownRenderer, Scope, WorkspaceLeaf, request, requestUrl, setIcon, Platform } from 'obsidian';
+import { ItemView, MarkdownRenderer, Scope, WorkspaceLeaf, request, requestUrl, setIcon, Platform, TFile } from 'obsidian';
 import * as DOMPurify from 'dompurify';
 import { KhojSetting } from 'src/settings';
 import { KhojPaneView } from 'src/pane_view';
 import { KhojView, createCopyParentText, getLinkToEntry, pasteTextAtCursor } from 'src/utils';
 import { KhojSearchModal } from './search_modal';
+import * as JSON5 from 'json5';
 
 export interface ChatJsonResult {
     image?: string;
@@ -12,26 +13,38 @@ export interface ChatJsonResult {
     inferredQueries?: string[];
 }
 
-interface ChunkResult {
-    objects: string[];
-    remainder: string;
-}
-
 interface MessageChunk {
     type: string;
     data: any;
 }
 
 interface ChatMessageState {
-    newResponseTextEl: HTMLElement | null;
-    newResponseEl: HTMLElement | null;
-    loadingEllipsis: HTMLElement | null;
-    references: any;
-    generatedAssets: string;
+    newResponseTextEl: HTMLDivElement | null;
+    newResponseEl: HTMLDivElement | null;
+    loadingEllipsis: HTMLDivElement | null;
+    references: { [key: string]: any };
     rawResponse: string;
     rawQuery: string;
     isVoice: boolean;
+    generatedAssets: string;
     turnId: string;
+    editBlocks: EditBlock[];
+    editRetryCount: number;
+    parentRetryCount?: number; // Ajout du compteur parent
+}
+
+interface EditBlock {
+    note: string;      // Required: Brief one-line explanation
+    before: string;    // location.start
+    after: string;     // location.end
+    replacement: string; // content
+    file: string;      // Required: Target file name (without extension)
+    hasError?: boolean; // Optional: Flag to indicate parsing error
+    error?: {
+        type: 'missing_field' | 'invalid_json' | 'preprocessing' | 'unknown';
+        message: string;
+        details?: string;
+    };
 }
 
 interface Location {
@@ -53,6 +66,29 @@ interface RenderMessageOptions {
     isSystemMessage?: boolean;
 }
 
+interface ChatMode {
+    value: string;
+    label: string;
+    emoji: string;
+    command: string;
+}
+
+interface Agent {
+    name: string;
+    slug: string;
+    description: string;
+}
+
+interface ParseKhojEditResult {
+    editData: any;
+    cleanContent: string;
+    error?: {
+        type: 'missing_field' | 'invalid_json' | 'preprocessing' | 'unknown';
+        message: string;
+        details?: string;
+    };
+}
+
 export class KhojChatView extends KhojPaneView {
     result: string;
     setting: KhojSetting;
@@ -64,6 +100,18 @@ export class KhojChatView extends KhojPaneView {
     private currentUserInput: string = ""; // Stores the current user input that is being typed in chat
     private startingMessage: string = "Message";
     chatMessageState: ChatMessageState;
+    private agents: Agent[] = [];
+    private currentAgent: string | null = null;
+    private fileAccessMode: 'none' | 'read' | 'write' = 'none'; // Track the current file access mode
+    private chatModes: ChatMode[] = [
+        { value: "default", label: "Default", emoji: "🎯", command: "/default" },
+        { value: "general", label: "General", emoji: "💭", command: "/general" },
+        { value: "notes", label: "Notes", emoji: "📝", command: "/notes" },
+        { value: "online", label: "Online", emoji: "🌐", command: "/online" },
+        { value: "image", label: "Image", emoji: "🖼️", command: "/image" },
+        { value: "research", label: "Research", emoji: "🔬", command: "/research" }
+    ];
+    private editRetryCount: number = 0;  // Ajout du compteur au niveau de la classe
 
     constructor(leaf: WorkspaceLeaf, setting: KhojSetting) {
         super(leaf, setting);
@@ -110,24 +158,50 @@ export class KhojChatView extends KhojPaneView {
     }
 
     async chat(isVoice: boolean = false) {
+        // Cancel any pending edits before sending a new message
+        await this.cancelPendingEdits();
+
         // Get text in chat input element
         let input_el = <HTMLTextAreaElement>this.contentEl.getElementsByClassName("khoj-chat-input")[0];
 
         // Clear text after extracting message to send
         let user_message = input_el.value.trim();
+
         // Store the message in the array if it's not empty
         if (user_message) {
+            // Get the selected mode
+            const selectedMode = this.chatModes.find(mode =>
+                this.contentEl.querySelector(`#khoj-mode-${mode.value}:checked`)
+            );
+
+            // Check if message starts with a mode command
+            const modeMatch = this.chatModes.find(mode => user_message.startsWith(mode.command));
+
+            let displayMessage = user_message;
+            let apiMessage = user_message;
+
+            if (modeMatch) {
+                // If message starts with a mode command, replace it with the emoji in display
+                displayMessage = user_message.replace(modeMatch.command, modeMatch.emoji);
+            } else if (selectedMode) {
+                // If no mode in message but mode selected, add the mode command for API
+                displayMessage = `${selectedMode.emoji} ${user_message}`;
+                apiMessage = `${selectedMode.command} ${user_message}`;
+            }
+
             this.userMessages.push(user_message);
             // Update starting message after sending a new message
             const modifierKey = Platform.isMacOS ? '⌘' : '^';
             this.startingMessage = `(${modifierKey}+↑/↓) for prev messages`;
             input_el.placeholder = this.startingMessage;
-        }
-        input_el.value = "";
-        this.autoResize();
 
-        // Get and render chat response to user message
-        await this.getChatResponse(user_message, isVoice);
+            // Clear input and resize
+            input_el.value = "";
+            this.autoResize();
+
+            // Get and render chat response to user message
+            await this.getChatResponse(apiMessage, displayMessage, isVoice);
+        }
     }
 
     async onOpen() {
@@ -135,6 +209,9 @@ export class KhojChatView extends KhojPaneView {
         contentEl.addClass("khoj-chat");
 
         super.onOpen();
+
+        // Fetch available agents
+        await this.fetchAgents();
 
         // Construct Content Security Policy
         let defaultDomains = `'self' ${this.setting.khojUrl} https://*.obsidian.md https://app.khoj.dev https://assets.khoj.dev`;
@@ -154,8 +231,71 @@ export class KhojChatView extends KhojPaneView {
         // Create area for chat logs
         let chatBodyEl = contentEl.createDiv({ attr: { id: "khoj-chat-body", class: "khoj-chat-body" } });
 
+        // Add top control bar
+        let topControlRow = contentEl.createDiv("khoj-top-control-row");
+
+        // Create agent container
+        let agentContainer = topControlRow.createDiv("khoj-agent-container");
+
+        // Add agent selector
+        let agentSelect = agentContainer.createEl("select", {
+            attr: {
+                class: "khoj-agent-select",
+                title: "Select Agent"
+            }
+        });
+
+        // Add default option
+        let defaultOption = agentSelect.createEl("option", {
+            text: "Default Agent",
+            value: ""
+        });
+
+        // Add options for each agent
+        this.agents.forEach(agent => {
+            let option = agentSelect.createEl("option", {
+                text: agent.name,
+                value: agent.slug
+            });
+            if (agent.description) {
+                option.title = agent.description;
+            }
+        });
+
+        // Add New Chat button
+        let newChatButton = topControlRow.createEl("button", {
+            text: "New Chat",
+            attr: {
+                class: "khoj-new-chat-button",
+                title: "Start New Chat with Selected Agent"
+            }
+        });
+        setIcon(newChatButton, "plus-circle");
+        newChatButton.addEventListener('click', async () => {
+            const selectedAgent = (agentSelect as HTMLSelectElement).value;
+            await this.createNewConversation(selectedAgent);
+        });
+
+        // Add hint message for agent change
+        let agentHint = topControlRow.createEl("div", {
+            attr: {
+                class: "khoj-agent-hint",
+            },
+            text: "👈 Click this button to use the selected agent in a new chat !"
+        });
+
+        // Add event listener for agent selection change
+        agentSelect.addEventListener('change', (event) => {
+            const select = event.target as HTMLSelectElement;
+            const selectedAgent = select.value;
+            // Show hint if selected agent is different from current agent
+            const shouldShowHint = Boolean(selectedAgent !== this.currentAgent && chatBodyEl.dataset.conversationId);
+            agentHint.classList.toggle('visible', shouldShowHint);
+        });
+
         // Add chat input field
         let inputRow = contentEl.createDiv("khoj-input-row");
+
         let chatSessions = inputRow.createEl("button", {
             text: "Chat Sessions",
             attr: {
@@ -165,6 +305,36 @@ export class KhojChatView extends KhojPaneView {
         })
         chatSessions.addEventListener('click', async (_) => { await this.toggleChatSessions() });
         setIcon(chatSessions, "history");
+
+        // Add file access mode button
+        let fileAccessButton = inputRow.createEl("button", {
+            text: "File Access",
+            attr: {
+                class: "khoj-input-row-button clickable-icon",
+                title: "Toggle file access mode (No Access)",
+            },
+        });
+        setIcon(fileAccessButton, "file-x");
+        fileAccessButton.addEventListener('click', () => {
+            // Cycle through modes: none -> read -> write -> none
+            switch (this.fileAccessMode) {
+                case 'none':
+                    this.fileAccessMode = 'read';
+                    setIcon(fileAccessButton, "file-search");
+                    fileAccessButton.title = "Toggle file access mode (Read Only)";
+                    break;
+                case 'read':
+                    this.fileAccessMode = 'write';
+                    setIcon(fileAccessButton, "file-edit");
+                    fileAccessButton.title = "Toggle file access mode (Read & Write)";
+                    break;
+                case 'write':
+                    this.fileAccessMode = 'none';
+                    setIcon(fileAccessButton, "file-x");
+                    fileAccessButton.title = "Toggle file access mode (No Access)";
+                    break;
+            }
+        });
 
         let chatInput = inputRow.createEl("textarea", {
             attr: {
@@ -208,6 +378,31 @@ export class KhojChatView extends KhojPaneView {
         setIcon(send, "arrow-up-circle");
         let sendImg = <SVGElement>send.getElementsByClassName("lucide-arrow-up-circle")[0]
         sendImg.addEventListener('click', async (_) => { await this.chat() });
+
+        // After all the input row elements, add the mode selector
+        let chatModeRow = contentEl.createDiv("khoj-mode-row");
+
+        // Create radio buttons for each mode
+        this.chatModes.forEach((mode) => {
+            let modeContainer = chatModeRow.createDiv({ attr: { class: "khoj-mode-container" } });
+            let modeInput = modeContainer.createEl("input", {
+                attr: {
+                    type: "radio",
+                    id: `khoj-mode-${mode.value}`,
+                    name: "khoj-mode",
+                    value: mode.value,
+                    class: "khoj-mode-input",
+                    ...(mode.value === "default" && { checked: "checked" })
+                }
+            });
+            let modeLabel = modeContainer.createEl("label", {
+                text: `${mode.emoji} ${mode.label}`,
+                attr: {
+                    for: `khoj-mode-${mode.value}`,
+                    class: "khoj-mode-label"
+                }
+            });
+        });
 
         // Get chat history from Khoj backend and set chat input state
         let getChatHistorySucessfully = await this.getChatHistory(chatBodyEl);
@@ -348,7 +543,7 @@ export class KhojChatView extends KhojPaneView {
         return referenceButton;
     }
 
-    generateReference(messageEl: Element, referenceJson: any, index: number) {
+    generateReference(messageEl: Element, referenceJson: any, index: number | string) {
         let reference: string = referenceJson.hasOwnProperty("compiled") ? referenceJson.compiled : referenceJson;
         let referenceFile = referenceJson.hasOwnProperty("file") ? referenceJson.file : null;
 
@@ -455,6 +650,11 @@ export class KhojChatView extends KhojPaneView {
     formatHTMLMessage(message: string, raw = false, willReplace = true) {
         // Remove any text between <s>[INST] and </s> tags. These are spurious instructions for some AI chat model.
         message = message.replace(/<s>\[INST\].+(<\/s>)?/g, '');
+
+        // Transform khoj-edit blocks into accordions if not raw
+        if (!raw) {
+            message = this.transformKhojEditBlocks(message);
+        }
 
         // Sanitize the markdown message
         message = DOMPurify.sanitize(message);
@@ -649,15 +849,69 @@ export class KhojChatView extends KhojPaneView {
         copyButton.classList.add("chat-action-button");
         copyButton.title = "Copy Message to Clipboard";
         setIcon(copyButton, "copy-plus");
-        copyButton.addEventListener('click', createCopyParentText(message));
+        copyButton.addEventListener('click', () => {
+            // Convert khoj-edit blocks back to markdown format
+            let markdownMessage = message;
+            const khojEditRegex = /<details class="khoj-edit-accordion">[\s\S]*?<pre><code class="language-khoj-edit">([\s\S]*?)<\/code><\/pre>[\s\S]*?<\/details>/g;
+            markdownMessage = markdownMessage.replace(khojEditRegex, (_, content) => {
+                return `\`\`\`khoj-edit\n${content}\`\`\``;
+            });
+            navigator.clipboard.writeText(markdownMessage).then(() => {
+                setIcon(copyButton, "check");
+                setTimeout(() => {
+                    setIcon(copyButton, "copy-plus");
+                }, 1000);
+            });
+        });
 
         // Add button to paste into current buffer
         let pasteToFile = this.contentEl.createEl('button');
         pasteToFile.classList.add("chat-action-button");
         pasteToFile.title = "Paste Message to File";
         setIcon(pasteToFile, "clipboard-paste");
-        pasteToFile.addEventListener('click', (event) => { pasteTextAtCursor(createCopyParentText(message, 'clipboard-paste')(event)); });
+        pasteToFile.addEventListener('click', () => {
+            // Convert khoj-edit blocks back to markdown format before pasting
+            let markdownMessage = message;
+            const khojEditRegex = /<details class="khoj-edit-accordion">[\s\S]*?<pre><code class="language-khoj-edit">([\s\S]*?)<\/code><\/pre>[\s\S]*?<\/details>/g;
+            markdownMessage = markdownMessage.replace(khojEditRegex, (_, content) => {
+                return `\`\`\`khoj-edit\n${content}\`\`\``;
+            });
+            pasteTextAtCursor(markdownMessage);
+        });
 
+        // Add edit button only for user messages
+        let editButton = null;
+        if (!isSystemMessage && chatMessageBodyTextEl.closest('.khoj-chat-message.you')) {
+            editButton = this.contentEl.createEl('button');
+            editButton.classList.add("chat-action-button");
+            editButton.title = "Edit Message";
+            setIcon(editButton, "edit-3");
+            editButton.addEventListener('click', () => {
+                const messageEl = chatMessageBodyTextEl.closest('.khoj-chat-message');
+                if (messageEl) {
+                    // Get all messages up to this one
+                    const allMessages = Array.from(this.contentEl.getElementsByClassName('khoj-chat-message'));
+                    const currentIndex = allMessages.indexOf(messageEl as HTMLElement);
+
+                    // Remove all messages after and including this one
+                    for (let i = allMessages.length - 1; i >= currentIndex; i--) {
+                        allMessages[i].remove();
+                    }
+
+                    // Get the message content without the emoji if it exists
+                    let messageContent = message;
+                    const emojiRegex = /^[^\p{L}\p{N}]+\s*/u;
+                    messageContent = messageContent.replace(emojiRegex, '');
+
+                    // Set the message in the input field
+                    const chatInput = this.contentEl.querySelector('.khoj-chat-input') as HTMLTextAreaElement;
+                    if (chatInput) {
+                        chatInput.value = messageContent;
+                        chatInput.focus();
+                    }
+                }
+            });
+        }
 
         // Add delete button
         let deleteButton = null;
@@ -677,24 +931,21 @@ export class KhojChatView extends KhojPaneView {
             });
         }
 
-        // Only enable the speech feature if the user is subscribed
-        let speechButton = null;
-
+        // Append buttons to parent element
+        chatMessageBodyTextEl.append(copyButton, pasteToFile);
+        if (editButton) {
+            chatMessageBodyTextEl.append(editButton);
+        }
+        if (deleteButton) {
+            chatMessageBodyTextEl.append(deleteButton);
+        }
         if (this.setting.userInfo?.is_active) {
             // Create a speech button icon to play the message out loud
-            speechButton = this.contentEl.createEl('button');
+            let speechButton = this.contentEl.createEl('button');
             speechButton.classList.add("chat-action-button", "speech-button");
             speechButton.title = "Listen to Message";
             setIcon(speechButton, "speech")
             speechButton.addEventListener('click', (event) => this.textToSpeech(message, event));
-        }
-
-        // Append buttons to parent element
-        chatMessageBodyTextEl.append(copyButton, pasteToFile);
-        if (deleteButton) {
-            chatMessageBodyTextEl.append(deleteButton);
-        }
-        if (speechButton) {
             chatMessageBodyTextEl.append(speechButton);
         }
     }
@@ -706,7 +957,7 @@ export class KhojChatView extends KhojPaneView {
         return `${time_string}, ${date_string}`;
     }
 
-    createNewConversation() {
+    async createNewConversation(agentSlug?: string) {
         let chatBodyEl = this.contentEl.getElementsByClassName("khoj-chat-body")[0] as HTMLElement;
         chatBodyEl.innerHTML = "";
         chatBodyEl.dataset.conversationId = "";
@@ -719,7 +970,41 @@ export class KhojChatView extends KhojPaneView {
         if (chatInput) {
             chatInput.placeholder = this.startingMessage;
         }
-        this.renderMessage({chatBodyEl, message: "Hey 👋🏾, what's up?", sender: "khoj", isSystemMessage: true});
+
+        try {
+            // Create a new conversation with or without an agent
+            let endpoint = `${this.setting.khojUrl}/api/chat/sessions`;
+            if (agentSlug) {
+                endpoint += `?agent_slug=${encodeURIComponent(agentSlug)}`;
+            }
+
+            const response = await fetch(endpoint, {
+                method: "POST",
+                headers: {
+                    "Authorization": `Bearer ${this.setting.khojApiKey}`,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({}) // Empty body as agent_slug is in the URL
+            });
+
+            if (response.ok) {
+                const sessionInfo = await response.json();
+                chatBodyEl.dataset.conversationId = sessionInfo.conversation_id;
+                this.currentAgent = agentSlug || null;
+
+                // Update agent selector to reflect current agent
+                const agentSelect = this.contentEl.querySelector('.khoj-agent-select') as HTMLSelectElement;
+                if (agentSelect) {
+                    agentSelect.value = this.currentAgent || '';
+                }
+            } else {
+                console.error("Failed to create session:", response.statusText);
+            }
+        } catch (error) {
+            console.error("Error creating session:", error);
+        }
+
+        this.renderMessage({ chatBodyEl, message: "Hey 👋🏾, what's up?", sender: "khoj", isSystemMessage: true });
     }
 
     async toggleChatSessions(forceShow: boolean = false): Promise<boolean> {
@@ -918,6 +1203,8 @@ export class KhojChatView extends KhojPaneView {
             chatUrl += `&conversation_id=${chatBodyEl.dataset.conversationId}`;
         }
 
+        console.log("Fetching chat history from:", chatUrl);
+
         try {
             let response = await fetch(chatUrl, {
                 method: "GET",
@@ -925,6 +1212,8 @@ export class KhojChatView extends KhojPaneView {
             });
 
             let responseJson: any = await response.json();
+            console.log("Chat history response:", responseJson);
+
             chatBodyEl.dataset.conversationId = responseJson.conversation_id;
 
             if (responseJson.detail) {
@@ -943,8 +1232,28 @@ export class KhojChatView extends KhojPaneView {
                 chatBodyEl.dataset.conversationId = responseJson.response.conversation_id;
                 chatBodyEl.dataset.conversationTitle = responseJson.response.slug || `New conversation 🌱`;
 
+                // Update current agent from conversation history
+                if (responseJson.response.agent?.slug) {
+                    console.log("Found agent in conversation history:", responseJson.response.agent);
+                    this.currentAgent = responseJson.response.agent.slug;
+                    // Update the agent selector if it exists
+                    const agentSelect = this.contentEl.querySelector('.khoj-agent-select') as HTMLSelectElement;
+                    if (agentSelect && this.currentAgent) {
+                        agentSelect.value = this.currentAgent;
+                        console.log("Updated agent selector to:", this.currentAgent);
+                    }
+                }
+
                 let chatLogs = responseJson.response?.conversation_id ? responseJson.response.chat ?? [] : responseJson.response;
                 chatLogs.forEach((chatLog: any) => {
+                    // Convert commands to emojis for user messages
+                    if (chatLog.by === "you") {
+                        chatLog.message = this.convertCommandsToEmojis(chatLog.message);
+                    }
+
+                    // Transform khoj-edit blocks into accordions
+                    chatLog.message = this.transformKhojEditBlocks(chatLog.message);
+
                     this.renderMessageWithReferences(
                         chatBodyEl,
                         chatLog.message,
@@ -1007,12 +1316,10 @@ export class KhojChatView extends KhojPaneView {
         return { type: '', data: '' };
     }
 
-    processMessageChunk(rawChunk: string): void {
+    async processMessageChunk(rawChunk: string): Promise<void> {
         const chunk = this.convertMessageChunkToJson(rawChunk);
-        console.debug("Chunk:", chunk);
         if (!chunk || !chunk.type) return;
         if (chunk.type === 'status') {
-            console.log(`status: ${chunk.data}`);
             const statusMessage = chunk.data;
             this.handleStreamResponse(this.chatMessageState.newResponseTextEl, statusMessage, this.chatMessageState.loadingEllipsis, false);
         } else if (chunk.type === 'generated_assets') {
@@ -1021,19 +1328,37 @@ export class KhojChatView extends KhojPaneView {
             this.chatMessageState.generatedAssets = imageData;
             this.handleStreamResponse(this.chatMessageState.newResponseTextEl, imageData, this.chatMessageState.loadingEllipsis, false);
         } else if (chunk.type === 'start_llm_response') {
-            console.log("Started streaming", new Date());
+            // Start of streaming
         } else if (chunk.type === 'end_llm_response') {
-            console.log("Stopped streaming", new Date());
+            // End of streaming
         } else if (chunk.type === 'end_response') {
+            // Check for edit blocks if in write mode
+            if (this.fileAccessMode === 'write') {
+                const editBlocks = this.parseEditBlocks(this.chatMessageState.rawResponse);
+
+                // Check for errors and retry if needed
+                if (editBlocks.length > 0 && editBlocks[0].hasError && this.editRetryCount < 3) {
+                    await this.handleEditRetry(editBlocks[0]);
+                    return;
+                }
+
+                // Reset retry count on success
+                this.editRetryCount = 0;
+
+                if (editBlocks.length > 0) {
+                    await this.applyEditBlocks(editBlocks);
+                }
+            }
+
             // Automatically respond with voice if the subscribed user has sent voice message
-            if (this.chatMessageState.isVoice && this.setting.userInfo?.is_active)
+            if (this.chatMessageState.isVoice && this.setting.userInfo?.is_active && this.setting.autoVoiceResponse)
                 this.textToSpeech(this.chatMessageState.rawResponse);
 
             // Append any references after all the data has been streamed
             this.finalizeChatBodyResponse(this.chatMessageState.references, this.chatMessageState.newResponseTextEl, this.chatMessageState.turnId);
 
+            // Reset state including retry counts
             const liveQuery = this.chatMessageState.rawQuery;
-            // Reset variables
             this.chatMessageState = {
                 newResponseTextEl: null,
                 newResponseEl: null,
@@ -1044,16 +1369,17 @@ export class KhojChatView extends KhojPaneView {
                 isVoice: false,
                 generatedAssets: "",
                 turnId: "",
+                editBlocks: [],
+                editRetryCount: 0,
+                parentRetryCount: 0 // Reset parent retry count
             };
         } else if (chunk.type === "references") {
             this.chatMessageState.references = { "notes": chunk.data.context, "online": chunk.data.onlineContext };
         } else if (chunk.type === 'message') {
             const chunkData = chunk.data;
             if (typeof chunkData === 'object' && chunkData !== null) {
-                // If chunkData is already a JSON object
                 this.handleJsonResponse(chunkData);
             } else if (typeof chunkData === 'string' && chunkData.trim()?.startsWith("{") && chunkData.trim()?.endsWith("}")) {
-                // Try process chunk data as if it is a JSON object
                 try {
                     const jsonData = JSON.parse(chunkData.trim());
                     this.handleJsonResponse(jsonData);
@@ -1068,7 +1394,6 @@ export class KhojChatView extends KhojPaneView {
         } else if (chunk.type === "metadata") {
             const { turnId } = chunk.data;
             if (turnId) {
-                // Append turnId to chatMessageState
                 this.chatMessageState.turnId = turnId;
             }
         }
@@ -1124,33 +1449,67 @@ export class KhojChatView extends KhojPaneView {
         }
     }
 
-    async getChatResponse(query: string | undefined | null, isVoice: boolean = false): Promise<void> {
+    async getChatResponse(query: string | undefined | null, displayQuery: string | undefined | null, isVoice: boolean = false, displayUserMessage: boolean = true): Promise<void> {
         // Exit if query is empty
         if (!query || query === "") return;
 
-        // Render user query as chat message
+        // Get chat body element
         let chatBodyEl = this.contentEl.getElementsByClassName("khoj-chat-body")[0] as HTMLElement;
-        this.renderMessage({chatBodyEl, message: query, sender: "you"});
+
+        // Render user query as chat message with display version only if displayUserMessage is true
+        if (displayUserMessage) {
+            this.renderMessage({ chatBodyEl, message: displayQuery || query, sender: "you" });
+        }
 
         let conversationId = chatBodyEl.dataset.conversationId;
+
         if (!conversationId) {
-            let chatUrl = `${this.setting.khojUrl}/api/chat/sessions?client=obsidian`;
-            let response = await fetch(chatUrl, {
-                method: "POST",
-                headers: { "Authorization": `Bearer ${this.setting.khojApiKey}` },
-            });
-            let data = await response.json();
-            conversationId = data.conversation_id;
-            chatBodyEl.dataset.conversationId = conversationId;
+            try {
+                const requestBody = {
+                    ...(this.currentAgent && { agent_slug: this.currentAgent })
+                };
+
+                const response = await fetch(`${this.setting.khojUrl}/api/chat/sessions`, {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Bearer ${this.setting.khojApiKey}`,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    conversationId = data.conversation_id;
+                    chatBodyEl.dataset.conversationId = conversationId;
+                } else {
+                    console.error("Failed to create session:", response.statusText);
+                    return;
+                }
+            } catch (error) {
+                console.error("Error creating session:", error);
+                return;
+            }
         }
+
+        // Get open files content if we have access
+        const openFilesContent = await this.getOpenFilesContent();
+
+        // Extract mode command if present
+        const modeMatch = this.chatModes.find(mode => query.startsWith(mode.command));
+        const modeCommand = modeMatch ? query.substring(0, modeMatch.command.length) : '';
+        const queryWithoutMode = modeMatch ? query.substring(modeMatch.command.length).trim() : query;
+
+        // Combine mode, query and files content
+        const finalQuery = modeCommand + (modeCommand ? ' ' : '') + queryWithoutMode + openFilesContent;
 
         // Get chat response from Khoj backend
         const chatUrl = `${this.setting.khojUrl}/api/chat?client=obsidian`;
         const body = {
-            q: query,
+            q: finalQuery,
             n: this.setting.resultsCount,
             stream: true,
-            ...(!!conversationId && { conversation_id: conversationId }),
+            conversation_id: conversationId,
+            ...(this.currentAgent && { agent_slug: this.currentAgent }),
             ...(!!this.location && this.location.city && { city: this.location.city }),
             ...(!!this.location && this.location.region && { region: this.location.region }),
             ...(!!this.location && this.location.countryName && { country: this.location.countryName }),
@@ -1177,6 +1536,8 @@ export class KhojChatView extends KhojPaneView {
             isVoice: isVoice,
             generatedAssets: "",
             turnId: "",
+            editBlocks: [],
+            editRetryCount: 0
         };
 
         let response = await fetch(chatUrl, {
@@ -1501,7 +1862,7 @@ export class KhojChatView extends KhojPaneView {
             numReferences += references["notes"].length;
 
             references["notes"].forEach((reference: any, index: number) => {
-                let polishedReference = this.generateReference(referenceSection, reference, index);
+                let polishedReference = this.generateReference(referenceSection, reference, index.toString());
                 referenceSection.appendChild(polishedReference);
             });
         }
@@ -1597,5 +1958,804 @@ export class KhojChatView extends KhojPaneView {
             console.error("Error deleting message:", error);
             this.flashStatusInChatInput("Error deleting message");
         }
+    }
+
+    async fetchAgents() {
+        try {
+            const response = await fetch(`${this.setting.khojUrl}/api/agents`, {
+                headers: {
+                    "Authorization": `Bearer ${this.setting.khojApiKey}`
+                }
+            });
+
+            if (response.ok) {
+                this.agents = await response.json();
+            } else {
+                console.error("Failed to fetch agents:", response.statusText);
+            }
+        } catch (error) {
+            console.error("Error fetching agents:", error);
+        }
+    }
+
+    // Add this new method after the class declaration
+    private async getOpenFilesContent(): Promise<string> {
+        // Only proceed if we have read or write access
+        if (this.fileAccessMode === 'none') return '';
+
+        // Get all open markdown leaves
+        const leaves = this.app.workspace.getLeavesOfType('markdown');
+        if (leaves.length === 0) return '';
+
+        let openFilesContent = "\n\n[SYSTEM]The user is currently working on the following files (content provided for context):\n\n";
+
+        // Simplification des instructions d'édition
+        if (this.fileAccessMode === 'write') {
+            openFilesContent += `[EDIT INSTRUCTIONS] I can help you edit your notes using targeted modifications. I'll use multiple edit blocks to make precise changes rather than rewriting entire sections.
+
+\`\`\`khoj-edit
+{
+    "note": "Brief one-line explanation of what this edit does",
+    "location": {
+        "start": "<start words>",
+        "end": "<end words>"
+    },
+    "content": "<complete new content, including end marker if you want to keep it>",
+    "file": "target-filename"  // Required: specify which open file to edit (without .md extension)
+}
+\`\`\`
+
+⚠️ Important:
+- The end marker text is included in the edited section and will be deleted. If you want to keep it, make sure to include it in your "content"
+- The "file" parameter is required and must match an open file name (without .md extension)
+- Use \" for quotes and \`\`\` for backticks in your content to ensure proper parsing
+
+📝 Example note:
+
+\`\`\`
+---
+date: 2024-01-20
+tags: meeting, planning
+status: active
+---
+# Meeting Notes
+
+Action items from today:
+- Review Q4 metrics
+- Schedule follow-up with marketing team about new campaign launch
+- Update project timeline and milestones for Q1 2024
+
+Next steps:
+- Send summary to team
+- Book conference room for next week
+\`\`\`
+
+Examples of targeted edits:
+
+1. Using just a few words to identify long text (notice how "campaign launch" is kept in content):
+\`\`\`khoj-edit
+{
+    "note": "Add deadline and specificity to the marketing team follow-up",
+    "location": {
+        "start": "- Schedule follow-up",
+        "end": "campaign launch"
+    },
+    "content": "- Schedule follow-up with marketing team by Wednesday to discuss Q1 campaign launch",
+    "file": "Meeting Notes"
+}
+\`\`\`
+
+2. Multiple targeted changes with escaped characters:
+\`\`\`khoj-edit
+{
+    "note": "Add HIGH priority flag with code reference to Q4 metrics review",
+    "location": {
+        "start": "- Review Q4",
+        "end": "metrics"
+    },
+    "content": "- [HIGH] Review Q4 metrics (see \"metrics.ts\" and \`calculateQ4Metrics()\`)",
+    "file": "Meeting Notes"
+}
+\`\`\`
+\`\`\`khoj-edit
+{
+    "note": "Add resource allocation to project timeline task",
+    "location": {
+        "start": "- Update project",
+        "end": "Q1 2024"
+    },
+    "content": "- Update project timeline and add resource allocation for Q1 2024",
+    "file": "Meeting Notes"
+}
+\`\`\`
+
+3. Adding new content between sections:
+\`\`\`khoj-edit
+{
+    "note": "Insert Discussion Points section between Action Items and Next Steps",
+    "location": {
+        "start": "Action items from today:",
+        "end": "Next steps:"
+    },
+    "content": "Action items from today:\\n- Review Q4 metrics\\n- Schedule follow-up\\n- Update timeline\\n\\nDiscussion Points:\\n- Budget review\\n- Team feedback\\n\\nNext steps:",
+    "file": "Meeting Notes"
+}
+\`\`\`
+
+4. Completely replacing a file content (preserving frontmatter):
+\`\`\`khoj-edit
+{
+    "note": "Replace entire file content while keeping frontmatter metadata",
+    "location": {
+        "start": "<file-start>",
+        "end": "<file-end>"
+    },
+    "content": "# Project Overview\\n\\n## Goals\\n- Increase user engagement by 25%\\n- Launch mobile app by Q3\\n- Expand to 3 new markets\\n\\n## Timeline\\n1. Q1: Research & Planning\\n2. Q2: Development\\n3. Q3: Testing & Launch\\n4. Q4: Market Expansion",
+    "file": "Meeting Notes"
+}
+\`\`\`
+
+💡 Key points:
+- note: Brief one-line explanation of what the edit does
+- location.start: few words from start of target text (no ambiguity). Use <file-start> to target beginning of content after frontmatter
+- location.end: few words from end of target text (no ambiguity). Use <file-end> to target file end
+- content: complete new content, including end marker text if you want to keep it
+- file: (required) name of the file to edit (without .md extension)
+- Words must uniquely identify the location (no ambiguity)
+- Changes apply to first matching location in the specified file
+- Use <file-start> and <file-end> markers to replace entire file content while preserving frontmatter
+- Frontmatter metadata (between --- markers at top of file) cannot be modified
+- Remember to escape special characters: use \" for quotes and \`\`\` for backticks in content
+
+[END OF EDIT INSTRUCTIONS]\n\n`;
+        }
+
+        openFilesContent += `[OPEN FILES CONTEXT]\n\n`;
+
+        for (const leaf of leaves) {
+            const view = leaf.view as any;
+            const file = view?.file;
+            if (!file || file.extension !== 'md') continue;
+
+            // Add file title without brackets
+            openFilesContent += `# ${file.basename}\n\`\`\`markdown\n`;
+
+            // Read file content
+            try {
+                const content = await this.app.vault.read(file);
+                openFilesContent += content;
+            } catch (error) {
+                console.error(`Error reading file ${file.path}:`, error);
+            }
+
+            openFilesContent += "\n```\n\n";
+        }
+
+        openFilesContent += "[END OF CURRENT FILES CONTEXT]\n\n";
+        openFilesContent += "[END OF SYSTEM INSTRUCTIONS]\n\n";
+
+        return openFilesContent;
+    }
+
+    // Common method to parse a khoj-edit block
+    private parseKhojEditBlock(content: string): ParseKhojEditResult {
+        let cleanContent = '';
+        try {
+            // Normalize line breaks and clean control characters, but preserve empty lines
+            cleanContent = content
+                .replace(/\r\n/g, '\n')
+                .replace(/\r/g, '\n')
+                .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
+                .trim();
+
+            // Parse the JSON first to identify the content field
+            let jsonContent = cleanContent;
+            try {
+                // Use a regex to find the content field and temporarily replace newlines
+                jsonContent = cleanContent.replace(
+                    /("content"\s*:\s*")((?:\\.|[^"\\])*?)(")/g,
+                    (match, prefix, contentValue, suffix) => {
+                        // Preserve actual newlines in content by escaping them differently
+                        const preservedContent = contentValue.replace(/\n/g, '§§NEWLINE§§');
+                        return prefix + preservedContent + suffix;
+                    }
+                );
+
+                // Escape newlines in other fields
+                jsonContent = jsonContent.replace(/"(?:\\.|[^"\\])*"/g, (match) => {
+                    if (!match.includes('"content":')) {
+                        return match.replace(/\n\s*\n/g, '\\n').replace(/\n/g, '\\n');
+                    }
+                    return match;
+                });
+
+                // Restore actual newlines in content field
+                jsonContent = jsonContent.replace(/§§NEWLINE§§/g, '\\n');
+            } catch (err) {
+                console.error("Error preprocessing JSON:", err);
+                jsonContent = cleanContent;
+            }
+
+            // Use JSON5 for tolerant parsing
+            const editData = JSON5.parse(jsonContent);
+
+            // List of allowed fields
+            const allowedFields = ['note', 'location', 'content', 'file'];
+
+            // Vérifier les champs en trop
+            const extraFields = Object.keys(editData).filter(key => !allowedFields.includes(key));
+            if (extraFields.length > 0) {
+                return {
+                    editData: null,
+                    cleanContent,
+                    error: {
+                        type: 'invalid_json',
+                        message: `Unexpected fields found: ${extraFields.join(', ')}`,
+                        details: `Only these fields are allowed: ${allowedFields.join(', ')}`
+                    }
+                };
+            }
+
+            // Check required fields
+            const requiredFields = {
+                note: 'Brief explanation of the edit',
+                'location.start': 'Start text to identify edit location',
+                'location.end': 'End text to identify edit location',
+                content: 'New content to insert',
+                file: 'Target file name'
+            };
+
+            const missingFields = [];
+            if (!editData.note) missingFields.push('note');
+            if (!editData.location?.start) missingFields.push('location.start');
+            if (!editData.location?.end) missingFields.push('location.end');
+            if (!('content' in editData)) missingFields.push('content');
+            if (!editData.file) missingFields.push('file');
+
+            if (missingFields.length > 0) {
+                return {
+                    editData: null,
+                    cleanContent,
+                    error: {
+                        type: 'missing_field',
+                        message: `Missing required fields: ${missingFields.join(', ')}`,
+                        details: `Each edit block must include: ${Object.entries(requiredFields)
+                            .map(([k, v]) => `\n- ${k}: ${v}`)
+                            .join('')}`
+                    }
+                };
+            }
+
+            return { editData, cleanContent };
+        } catch (e) {
+            if (e.name === 'SyntaxError') {
+                return {
+                    editData: null,
+                    cleanContent,
+                    error: {
+                        type: 'invalid_json',
+                        message: 'Invalid JSON format in edit block',
+                        details: e.message
+                    }
+                };
+            }
+            return {
+                editData: null,
+                cleanContent,
+                error: {
+                    type: 'unknown',
+                    message: 'Unexpected error parsing edit block',
+                    details: e.message
+                }
+            };
+        }
+    }
+
+    private parseEditBlocks(message: string): EditBlock[] {
+        const editBlocks: EditBlock[] = [];
+        const editBlockRegex = /```khoj-edit\s*([\s\S]*?)```/g;
+        let hasError = false;
+
+        let match;
+        while ((match = editBlockRegex.exec(message)) !== null) {
+            const { editData, cleanContent, error } = this.parseKhojEditBlock(match[1]);
+
+            if (error) {
+                console.error("Failed to parse edit block:", error);
+                console.debug("Content causing error:", match[1]);
+                hasError = true;
+                editBlocks.push({
+                    note: "Error parsing edit block",
+                    before: "",
+                    after: "",
+                    replacement: `Error: ${error.message}\nOriginal content:\n${match[1]}`,
+                    file: "unknown", // Fallback value quand editData est null
+                    error: error // On passe aussi l'erreur pour le retry
+                });
+                continue;
+            }
+
+            if (!editData) {
+                console.error("No edit data parsed");
+                continue;
+            }
+
+            editBlocks.push({
+                note: editData.note,
+                before: editData.location.start,
+                after: editData.location.end,
+                replacement: editData.content,
+                file: editData.file
+            });
+        }
+
+        if (editBlocks.length > 0) {
+            editBlocks[0] = { ...editBlocks[0], hasError };
+        }
+
+        return editBlocks;
+    }
+
+    // Add this helper function to calculate Levenshtein distance
+    private levenshteinDistance(a: string, b: string): number {
+        if (a.length === 0) return b.length;
+        if (b.length === 0) return a.length;
+
+        const matrix = Array(b.length + 1).fill(null).map(() =>
+            Array(a.length + 1).fill(null)
+        );
+
+        for (let i = 0; i <= a.length; i++) matrix[0][i] = i;
+        for (let j = 0; j <= b.length; j++) matrix[j][0] = j;
+
+        for (let j = 1; j <= b.length; j++) {
+            for (let i = 1; i <= a.length; i++) {
+                const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+                matrix[j][i] = Math.min(
+                    matrix[j][i - 1] + 1, // deletion
+                    matrix[j - 1][i] + 1, // insertion
+                    matrix[j - 1][i - 1] + cost // substitution
+                );
+            }
+        }
+
+        return matrix[b.length][a.length];
+    }
+
+    private findBestMatchingFile(targetName: string, files: TFile[]): TFile | null {
+        const MAX_DISTANCE = 10;
+        let bestMatch: { file: TFile, distance: number } | null = null;
+
+        for (const file of files) {
+            // Try both with and without extension
+            const distanceWithExt = this.levenshteinDistance(targetName.toLowerCase(), file.name.toLowerCase());
+            const distanceWithoutExt = this.levenshteinDistance(targetName.toLowerCase(), file.basename.toLowerCase());
+            const distance = Math.min(distanceWithExt, distanceWithoutExt);
+
+            if (distance <= MAX_DISTANCE && (!bestMatch || distance < bestMatch.distance)) {
+                bestMatch = { file, distance };
+            }
+        }
+
+        return bestMatch?.file || null;
+    }
+
+    private async applyEditBlocks(editBlocks: EditBlock[]) {
+        // Check for parsing errors first
+        if (editBlocks.length === 0) return;
+
+        // @ts-ignore - we added hasError dynamically
+        if (editBlocks[0].hasError) {
+            console.log("Skipping edit application due to parsing errors");
+            return;
+        }
+
+        // Store original content for each file in case we need to cancel
+        const fileBackups = new Map<string, string>();
+
+        // Get all open markdown files
+        const files = this.app.workspace.getLeavesOfType('markdown')
+            .map(leaf => (leaf.view as any)?.file)
+            .filter(file => file && file.extension === 'md');
+
+        // Group edit blocks by target file
+        const editsByFile = new Map<TFile, EditBlock[]>();
+
+        for (const block of editBlocks) {
+            const targetFile = this.findBestMatchingFile(block.file, files);
+            if (targetFile) {
+                const fileEdits = editsByFile.get(targetFile) || [];
+                fileEdits.push(block);
+                editsByFile.set(targetFile, fileEdits);
+            } else {
+                console.warn(`No matching file found for "${block.file}" (within Levenshtein distance of 10)`);
+            }
+        }
+
+        // Process each file's edits
+        for (const [file, targetedEdits] of editsByFile) {
+            try {
+                // Read the file content
+                const content = await this.app.vault.read(file);
+                let newContent = content;
+                let hasChanges = false;
+                let hasLocationError = false;
+
+                // Find frontmatter boundaries
+                const frontmatterMatch = content.match(/^---\n[\s\S]*?\n---\n/);
+                const frontmatterEndIndex = frontmatterMatch ? frontmatterMatch[0].length : 0;
+
+                // Collect all edits for this file first
+                interface PlannedEdit {
+                    startIndex: number;
+                    endIndex: number;
+                    preview: string;
+                }
+                const plannedEdits: PlannedEdit[] = [];
+
+                // First pass: collect all edits
+                for (const block of targetedEdits) {
+                    // Clean up the replacement content by removing file markers and frontmatter if present
+                    let replacement = block.replacement
+                        .replace(/^[\s\n]*<file-start>[\s\n]*/, '') // Remove file-start marker
+                        .replace(/[\s\n]*<file-end>[\s\n]*$/, '')   // Remove file-end marker
+                        .trim();
+
+                    // Remove frontmatter if block starts at beginning and has frontmatter
+                    if ((block.before === '' || block.before.includes('<file-start>')) &&
+                        replacement.startsWith('---\n')) {
+                        const frontmatterEnd = replacement.indexOf('\n---\n');
+                        if (frontmatterEnd !== -1) {
+                            replacement = replacement.substring(frontmatterEnd + 5).trim();
+                        }
+                    }
+
+                    // Handle special markers for file start and end
+                    const before = block.before.replace('<file-start>', '');
+                    const after = block.after.replace('<file-end>', '');
+
+                    // Find the text to replace in original content
+                    let startIndex = -1;
+                    let endIndex = -1;
+
+                    if (block.before.includes('<file-start>')) {
+                        startIndex = frontmatterEndIndex;
+                    } else {
+                        startIndex = content.indexOf(before, frontmatterEndIndex);
+                    }
+
+                    if (block.after.includes('<file-end>')) {
+                        endIndex = content.length;
+                    } else {
+                        if (startIndex !== -1) {
+                            endIndex = content.indexOf(after, startIndex);
+                            if (endIndex !== -1) {
+                                endIndex = endIndex + after.length;
+                            }
+                        }
+                    }
+
+                    if (startIndex === -1 || endIndex === -1) {
+                        hasLocationError = true;
+                        editBlocks[0].hasError = true;
+                        editBlocks[0].error = {
+                            type: 'invalid_json',
+                            message: 'Could not locate the text to edit',
+                            details: `Could not find the specified text in file "${file.basename}".\nStart text: "${before}"\nEnd text: "${after}"`
+                        };
+                        break;
+                    }
+
+                    // Get the text to replace from original content
+                    const textToReplace = content.substring(startIndex, endIndex);
+                    const originalText = textToReplace;
+                    const newText = replacement;
+
+                    // Find common prefix and suffix between original and new text
+                    let prefixLength = 0;
+                    const minLength = Math.min(originalText.length, newText.length);
+                    while (prefixLength < minLength && originalText[prefixLength] === newText[prefixLength]) {
+                        prefixLength++;
+                    }
+
+                    let suffixLength = 0;
+                    while (
+                        suffixLength < minLength - prefixLength &&
+                        originalText[originalText.length - 1 - suffixLength] === newText[newText.length - 1 - suffixLength]
+                    ) {
+                        suffixLength++;
+                    }
+
+                    // Extract the common and different parts
+                    const commonPrefix = originalText.slice(0, prefixLength);
+                    const commonSuffix = originalText.slice(originalText.length - suffixLength);
+                    const originalDiff = originalText.slice(prefixLength, originalText.length - suffixLength);
+                    const newDiff = newText.slice(prefixLength, newText.length - suffixLength);
+
+                    // Format each line of the differences
+                    const formatLines = (text: string, marker: string): string => {
+                        if (!text) return '';
+                        return text.split('\n')
+                            .map(line => {
+                                line = line.trim();
+                                if (!line) {
+                                    // Only keep empty lines for == marker
+                                    return marker === '==' ? '' : '~~';
+                                }
+                                return `${marker}${line}${marker}`;
+                            })
+                            .filter(line => line !== '~~') // Remove empty strings
+                            .join('\n');
+                    };
+
+                    // Create the preview with only the differences marked, line by line
+                    const formattedPreview =
+                        commonPrefix +
+                        (originalDiff ? formatLines(originalDiff, '~~') : '') +
+                        (newDiff ? formatLines(newDiff, '==') : '') +
+                        commonSuffix;
+
+                    plannedEdits.push({
+                        startIndex,
+                        endIndex,
+                        preview: formattedPreview
+                    });
+                    hasChanges = true;
+                }
+
+                if (hasLocationError) {
+                    // Trigger a retry if location wasn't found
+                    if (this.editRetryCount < 2) {
+                        await this.handleEditRetry(editBlocks[0]);
+                    }
+                    return;
+                }
+
+                // Sort edits by start index in reverse order (to apply from end to start)
+                plannedEdits.sort((a, b) => b.startIndex - a.startIndex);
+
+                // Second pass: apply all edits
+                for (const edit of plannedEdits) {
+                    newContent =
+                        newContent.substring(0, edit.startIndex) +
+                        edit.preview +
+                        newContent.substring(edit.endIndex);
+                }
+
+                // If any changes were made, backup the original content and save the changes
+                if (hasChanges) {
+                    fileBackups.set(file.path, content);
+                    await this.app.vault.modify(file, newContent);
+                }
+            } catch (error) {
+                console.error(`Error applying edits to ${file.path}:`, error);
+            }
+        }
+
+        // Add confirmation buttons to the last message
+        const chatBodyEl = this.contentEl.getElementsByClassName("khoj-chat-body")[0];
+        const lastMessage = chatBodyEl.lastElementChild;
+
+        if (lastMessage) {
+            const buttonsContainer = lastMessage.createDiv({ cls: "edit-confirmation-buttons" });
+
+            // Create Apply button
+            const applyButton = buttonsContainer.createEl("button", {
+                text: "✅ Apply",
+                cls: ["edit-confirm-button", "edit-apply-button"],
+            });
+
+            // Create Cancel button
+            const cancelButton = buttonsContainer.createEl("button", {
+                text: "❌ Cancel",
+                cls: ["edit-confirm-button", "edit-cancel-button"],
+            });
+
+            // Scroll to the buttons
+            buttonsContainer.scrollIntoView({ behavior: "smooth", block: "center" });
+
+            // Handle Apply button click
+            applyButton.addEventListener("click", async () => {
+                try {
+                    for (const [filePath, originalContent] of fileBackups) {
+                        const file = this.app.vault.getAbstractFileByPath(filePath);
+                        if (file && file instanceof TFile) {
+                            const currentContent = await this.app.vault.read(file);
+                            let finalContent = currentContent;
+
+                            // 1. Remove text between ~~ and handle line breaks
+                            finalContent = finalContent.replace(/~~[^~]*~~\n?(?=~~)/g, ''); // Remove newline if next line starts with ~~
+                            finalContent = finalContent.replace(/~~[^~]*~~/g, ''); // Remove remaining ~~ content
+
+                            // 2. Remove all == globally
+                            finalContent = finalContent.replace(/==/g, '');
+
+                            await this.app.vault.modify(file, finalContent);
+                        }
+                    }
+
+                    // Show success message
+                    const successMessage = lastMessage.createDiv({ cls: "edit-status-message success" });
+                    successMessage.textContent = "✅ Changes applied successfully";
+                    setTimeout(() => successMessage.remove(), 3000);
+                } catch (error) {
+                    console.error("Error applying changes:", error);
+                    // Show error message
+                    const errorMessage = lastMessage.createDiv({ cls: "edit-status-message error" });
+                    errorMessage.textContent = "❌ Error applying changes";
+                    setTimeout(() => errorMessage.remove(), 3000);
+                } finally {
+                    // Remove the buttons after applying
+                    buttonsContainer.remove();
+                }
+            });
+
+            // Handle Cancel button click
+            cancelButton.addEventListener("click", async () => {
+                try {
+                    // Restore original content for all modified files
+                    for (const [filePath, originalContent] of fileBackups) {
+                        const file = this.app.vault.getAbstractFileByPath(filePath);
+                        if (file && file instanceof TFile) {
+                            await this.app.vault.modify(file, originalContent);
+                        }
+                    }
+                    // Show success message
+                    const successMessage = lastMessage.createDiv({ cls: "edit-status-message success" });
+                    successMessage.textContent = "✅ Changes cancelled successfully";
+                    setTimeout(() => successMessage.remove(), 3000);
+                } catch (error) {
+                    console.error("Error cancelling changes:", error);
+                    // Show error message
+                    const errorMessage = lastMessage.createDiv({ cls: "edit-status-message error" });
+                    errorMessage.textContent = "❌ Error cancelling changes";
+                    setTimeout(() => errorMessage.remove(), 3000);
+                } finally {
+                    // Remove the buttons after canceling
+                    buttonsContainer.remove();
+                }
+            });
+        }
+    }
+
+    private convertCommandsToEmojis(message: string): string {
+        const modeMatch = this.chatModes.find(mode => message.startsWith(mode.command));
+        if (modeMatch) {
+            return message.replace(modeMatch.command, modeMatch.emoji);
+        }
+        return message;
+    }
+
+    // Make the method public and async
+    public async applyPendingEdits() {
+        const chatBodyEl = this.contentEl.getElementsByClassName("khoj-chat-body")[0];
+        const lastMessage = chatBodyEl.lastElementChild;
+        if (!lastMessage) return;
+
+        // Check for edit confirmation buttons
+        const buttonsContainer = lastMessage.querySelector(".edit-confirmation-buttons");
+        if (!buttonsContainer) return;
+
+        // Find and click the apply button if it exists
+        const applyButton = buttonsContainer.querySelector(".edit-apply-button");
+        if (applyButton instanceof HTMLElement) {
+            applyButton.click();
+        }
+    }
+
+    // Make the method public
+    public async cancelPendingEdits() {
+        const chatBodyEl = this.contentEl.getElementsByClassName("khoj-chat-body")[0];
+        const lastMessage = chatBodyEl.lastElementChild;
+        if (!lastMessage) return;
+
+        // Check for edit confirmation buttons
+        const buttonsContainer = lastMessage.querySelector(".edit-confirmation-buttons");
+        if (!buttonsContainer) return;
+
+        // Find and click the cancel button if it exists
+        const cancelButton = buttonsContainer.querySelector(".edit-cancel-button");
+        if (cancelButton instanceof HTMLElement) {
+            cancelButton.click();
+        }
+    }
+
+    // Add this new method to handle khoj-edit block transformation
+    private transformKhojEditBlocks(message: string): string {
+        // Get all open markdown files
+        const files = this.app.workspace.getLeavesOfType('markdown')
+            .map(leaf => (leaf.view as any)?.file)
+            .filter(file => file && file.extension === 'md');
+
+        return message.replace(/```khoj-edit\s*([\s\S]*?)```/g, (match, content) => {
+            const { editData, cleanContent, error } = this.parseKhojEditBlock(content);
+
+            // Escape content for HTML display
+            const escapedContent = cleanContent
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+
+            if (error) {
+                console.error("Error parsing khoj-edit block:", error);
+                console.debug("Content causing error:", content);
+
+                const errorTitle = `Error: ${error.message}`;
+                const errorDetails = `Failed to parse edit block. Please check the JSON format and ensure all required fields are present.`;
+
+                return `<details class="khoj-edit-accordion error">
+                    <summary>${errorTitle}</summary>
+                    <div class="khoj-edit-content">
+                        <p class="khoj-edit-error-message">${errorDetails}</p>
+                        <pre><code class="language-khoj-edit error">${escapedContent}</code></pre>
+                    </div>
+                </details>`;
+            }
+
+            // Find the actual file that will be modified
+            const targetFile = this.findBestMatchingFile(editData.file, files);
+            const displayFileName = targetFile ? targetFile.basename : editData.file;
+
+            return `<details class="khoj-edit-accordion success">
+                <summary>${editData.note} <span class="khoj-edit-file">(📄 ${displayFileName})</span></summary>
+                <div class="khoj-edit-content">
+                    <pre><code class="language-khoj-edit">${escapedContent}</code></pre>
+                </div>
+            </details>`;
+        });
+    }
+
+    private async handleEditRetry(errorBlock: EditBlock) {
+        this.editRetryCount++;
+
+        // Format error message based on the error type
+        let errorDetails = '';
+        if (errorBlock.error?.type === 'missing_field') {
+            errorDetails = `Missing required fields: ${errorBlock.error.message}\n`;
+            errorDetails += `Please include all required fields:\n${errorBlock.error.details}\n`;
+        } else if (errorBlock.error?.type === 'invalid_json') {
+            errorDetails = `The JSON format is invalid: ${errorBlock.error.message}\n`;
+            errorDetails += "Please check the syntax and provide a valid JSON edit block.\n";
+        } else {
+            errorDetails = `Error: ${errorBlock.error?.message || 'Unknown error'}\n`;
+            if (errorBlock.error?.details) {
+                errorDetails += `Details: ${errorBlock.error.details}\n`;
+            }
+        }
+
+        // Create retry badge
+        const chatBodyEl = this.contentEl.getElementsByClassName("khoj-chat-body")[0];
+        const retryBadge = chatBodyEl.createDiv({ cls: "khoj-retry-badge" });
+
+        // Add retry icon
+        retryBadge.createSpan({ cls: "retry-icon", text: "🔄" });
+
+        // Add main text
+        retryBadge.createSpan({ text: "Try again to apply changes" });
+
+        // Add retry count
+        retryBadge.createSpan({
+            cls: "retry-count",
+            text: `Attempt ${this.editRetryCount}/3`
+        });
+
+        // Add error details as a tooltip
+        retryBadge.setAttribute('aria-label', errorDetails);
+        // @ts-ignore - Obsidian's custom tooltip API
+        const hoverEditor = this.app.plugins.plugins["obsidian-hover-editor"];
+        if (hoverEditor) {
+            new hoverEditor.HoverPopover(this.app, retryBadge, errorDetails);
+        }
+
+        // Scroll to the badge
+        retryBadge.scrollIntoView({ behavior: "smooth", block: "center" });
+
+        // Create a retry prompt for the LLM
+        const retryPrompt = `/general I noticed some issues with the edit block. Please fix the following and provide a corrected version (retry ${this.editRetryCount}/3):\n\n${errorDetails}\n\nPlease provide a new edit block that fixes these issues. Make sure to follow the exact format required.`;
+
+        // Send retry request without displaying the user message
+        await this.getChatResponse(retryPrompt, "", false, false);
     }
 }
