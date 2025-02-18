@@ -1280,6 +1280,7 @@ help_message = PromptTemplate.from_template(
 - **/default**: Chat using your knowledge base and Khoj's general knowledge for context.
 - **/online**: Chat using the internet as a source of information.
 - **/image**: Generate an image based on your message.
+- **/research**: Go deeper in a topic for more accurate, in-depth responses.
 - **/help**: Show this help message.
 
 You are using the **{model}** model on the **{device}**.

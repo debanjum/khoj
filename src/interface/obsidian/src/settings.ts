@@ -27,6 +27,7 @@ export interface KhojSetting {
     userInfo: UserInfo | null;
     syncFolders: string[];
     syncInterval: number;
+    autoVoiceResponse: boolean;
 }
 
 export const DEFAULT_SETTINGS: KhojSetting = {
@@ -44,6 +45,7 @@ export const DEFAULT_SETTINGS: KhojSetting = {
     userInfo: null,
     syncFolders: [],
     syncInterval: 60,
+    autoVoiceResponse: true,
 }
 
 export class KhojSettingTab extends PluginSettingTab {
@@ -250,6 +252,17 @@ export class KhojSettingTab extends PluginSettingTab {
                     indexVaultSetting = indexVaultSetting.setDisabled(false);
                 })
             );
+
+        // Add new setting for auto voice response after voice input
+        new Setting(containerEl)
+            .setName('Auto Voice Response')
+            .setDesc('Automatically read responses after voice messages')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.autoVoiceResponse)
+                .onChange(async (value) => {
+                    this.plugin.settings.autoVoiceResponse = value;
+                    await this.plugin.saveSettings();
+                }));
     }
 
     // Helper method to update the folder list display

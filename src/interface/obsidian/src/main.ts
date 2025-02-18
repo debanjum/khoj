@@ -49,6 +49,31 @@ export default class Khoj extends Plugin {
             }
         });
 
+        // Add edit confirmation commands
+        this.addCommand({
+            id: 'apply-edits',
+            name: 'Apply pending edits',
+            hotkeys: [{ modifiers: ["Ctrl", "Shift"], key: "Enter" }],
+            callback: () => {
+                const chatView = this.app.workspace.getActiveViewOfType(KhojChatView);
+                if (chatView) {
+                    chatView.applyPendingEdits();
+                }
+            }
+        });
+
+        this.addCommand({
+            id: 'cancel-edits',
+            name: 'Cancel pending edits',
+            hotkeys: [{ modifiers: ["Ctrl", "Shift"], key: "Backspace" }],
+            callback: () => {
+                const chatView = this.app.workspace.getActiveViewOfType(KhojChatView);
+                if (chatView) {
+                    chatView.cancelPendingEdits();
+                }
+            }
+        });
+
         this.registerView(KhojView.CHAT, (leaf) => new KhojChatView(leaf, this.settings));
 
         // Create an icon in the left ribbon.

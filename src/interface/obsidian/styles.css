@@ -344,7 +344,7 @@ div.selected-conversation {
 
 .khoj-input-row {
     display: grid;
-    grid-template-columns: 32px auto 32px 32px;
+    grid-template-columns: 32px 32px auto 32px 32px;
     grid-column-gap: 10px;
     grid-row-gap: 10px;
     background: var(--background-primary);
@@ -566,6 +566,7 @@ button.chat-action-button {
     cursor: pointer;
     padding: 4px;
     margin-top: 8px;
+    margin-left: 4px;
     float: right;
 }
 
@@ -579,6 +580,35 @@ button.chat-action-button span {
 button.chat-action-button:hover {
     background-color: var(--background-modifier-active-hover);
     color: var(--text-normal);
+}
+
+/* Add specific hover colors for each action button */
+button.chat-action-button[title="Copy Message to Clipboard"]:hover {
+    background-color: rgba(0, 122, 255, 0.1);
+    /* Light blue */
+    border-color: rgb(0, 122, 255);
+    color: rgb(0, 122, 255);
+}
+
+button.chat-action-button[title="Paste Message to File"]:hover {
+    background-color: rgba(52, 199, 89, 0.1);
+    /* Light green */
+    border-color: rgb(52, 199, 89);
+    color: rgb(52, 199, 89);
+}
+
+button.chat-action-button[title="Edit Message"]:hover {
+    background-color: rgba(255, 149, 0, 0.1);
+    /* Light orange */
+    border-color: rgb(255, 149, 0);
+    color: rgb(255, 149, 0);
+}
+
+button.chat-action-button[title="Delete Message"]:hover {
+    background-color: rgba(255, 59, 48, 0.1);
+    /* Light red */
+    border-color: rgb(255, 59, 48);
+    color: rgb(255, 59, 48);
 }
 
 img.copy-icon {
@@ -781,7 +811,7 @@ img.copy-icon {
 .folder-list-remove {
     background: none;
     border: none;
-    color: #ff5555;
+    color: #e57373;
     cursor: pointer;
     font-size: 18px;
     width: 24px;
@@ -798,7 +828,7 @@ img.copy-icon {
 
 .folder-list-remove:hover {
     opacity: 1;
-    background-color: rgba(255, 85, 85, 0.1);
+    background-color: rgba(229, 115, 115, 0.1);
 }
 
 .folder-list-empty {
@@ -857,5 +887,384 @@ img.copy-icon {
 
     100% {
         transform: rotate(360deg);
+    }
+}
+
+/* Chat Mode Selector Styles */
+.khoj-mode-row {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 16px;
+    padding: 8px 16px;
+    font-family: inherit;
+    justify-content: center;
+    align-items: center;
+}
+
+.khoj-mode-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.khoj-mode-input {
+    margin: 0;
+}
+
+.khoj-mode-label {
+    font-family: inherit;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+/* Chat Mode Selector Styles */
+.khoj-agent-select {
+    font-family: inherit;
+    font-size: 14px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--khoj-storm-grey);
+    background-color: var(--background-primary);
+    color: var(--text-normal);
+    cursor: pointer;
+    min-width: 150px;
+    height: 32px;
+    margin: 0;
+}
+
+.khoj-agent-select:hover {
+    border-color: var(--text-accent);
+}
+
+.khoj-agent-select:focus {
+    outline: none;
+    border-color: var(--text-accent);
+    box-shadow: 0 0 0 2px rgba(var(--text-accent-rgb), 0.1);
+}
+
+.khoj-agent-select option {
+    background-color: var(--background-primary);
+    color: var(--text-normal);
+    padding: 8px;
+}
+
+.khoj-top-control-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 16px;
+    background: var(--background-primary);
+    border-bottom: 1px solid var(--background-modifier-border);
+    margin: 0;
+}
+
+.khoj-agent-container {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    max-width: 200px;
+}
+
+.khoj-agent-select {
+    width: 100%;
+}
+
+.khoj-agent-hint {
+    width: 100%;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 4px;
+    font-style: italic;
+    display: none;
+}
+
+.khoj-agent-hint.visible {
+    display: block;
+}
+
+.khoj-new-chat-button {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--khoj-storm-grey);
+    background-color: var(--background-primary);
+    color: var(--text-normal);
+    cursor: pointer;
+    height: 32px;
+    font-size: 14px;
+    align-self: flex-start;
+}
+
+.khoj-new-chat-button:hover {
+    background-color: var(--background-modifier-hover);
+    border-color: var(--text-accent);
+}
+
+/* Edit Confirmation Buttons */
+.edit-confirmation-buttons {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+    justify-content: center;
+}
+
+.edit-confirm-button {
+    padding: 4px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.2s ease;
+}
+
+.edit-apply-button {
+    background-color: rgba(52, 199, 89, 0.1);
+    border: 1px solid rgb(52, 199, 89);
+    color: rgb(52, 199, 89);
+}
+
+.edit-apply-button:hover {
+    background-color: rgba(52, 199, 89, 0.2);
+}
+
+.edit-cancel-button {
+    background-color: rgba(239, 154, 154, 0.1);
+    border: 1px solid #ef9a9a;
+    color: #d32f2f;
+}
+
+.edit-cancel-button:hover {
+    background-color: rgba(239, 154, 154, 0.2);
+}
+
+.edit-status-message {
+    margin-top: 8px;
+    padding: 8px;
+    border-radius: 4px;
+    font-size: 14px;
+    animation: fadeIn 0.3s ease;
+    text-align: center;
+    width: fit-content;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.edit-status-message.success {
+    background-color: rgba(52, 199, 89, 0.1);
+    color: rgb(52, 199, 89);
+    border: 1px solid rgb(52, 199, 89);
+}
+
+.edit-status-message.error {
+    background-color: rgba(239, 154, 154, 0.1);
+    color: #d32f2f;
+    border: 1px solid #ef9a9a;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Khoj Edit Accordion Styles */
+.khoj-edit-accordion {
+    margin: 1em 0;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    overflow: hidden;
+    transition: all 0.2s ease;
+}
+
+.khoj-edit-accordion summary {
+    padding: 8px 12px;
+    background-color: var(--background-secondary);
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.khoj-edit-accordion summary::before {
+    content: "📝";
+}
+
+/* Success state */
+.khoj-edit-accordion.success {
+    border-color: rgba(52, 199, 89, 0.5);
+    background-color: rgba(52, 199, 89, 0.05);
+}
+
+.khoj-edit-accordion.success summary {
+    background-color: rgba(52, 199, 89, 0.1);
+    color: rgb(39, 149, 67);
+}
+
+.khoj-edit-accordion.success summary::before {
+    content: "✅";
+}
+
+.khoj-edit-file {
+    margin-left: auto;
+    font-size: 0.9em;
+    opacity: 0.8;
+    font-style: italic;
+}
+
+/* Error state */
+.khoj-edit-accordion.error {
+    border-color: rgba(239, 68, 68, 0.5);
+    background-color: rgba(239, 68, 68, 0.05);
+}
+
+.khoj-edit-accordion.error summary {
+    background-color: rgba(239, 68, 68, 0.15);
+    color: rgb(185, 28, 28);
+}
+
+.khoj-edit-accordion.error summary::before {
+    content: "❌";
+}
+
+/* Hover effects */
+.khoj-edit-accordion.success:hover {
+    border-color: rgba(52, 199, 89, 0.8);
+    background-color: rgba(52, 199, 89, 0.1);
+}
+
+.khoj-edit-accordion.error:hover {
+    border-color: rgba(239, 68, 68, 0.8);
+    background-color: rgba(239, 68, 68, 0.1);
+}
+
+/* Content area */
+.khoj-edit-content {
+    padding: 12px;
+    background-color: var(--background-primary);
+}
+
+.khoj-edit-content pre {
+    margin: 0;
+    padding: 12px;
+    background-color: var(--background-secondary);
+    border-radius: 4px;
+}
+
+.khoj-edit-content code.error {
+    color: rgb(185, 28, 28);
+}
+
+/* Animations */
+.khoj-edit-accordion[open] summary {
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.khoj-edit-accordion:not([open]) summary:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+.khoj-edit-accordion[open] .khoj-edit-content {
+    animation: slideDown 0.2s ease-out;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Khoj Edit Block in Chat */
+.khoj-chat-message-text .khoj-edit-accordion {
+    margin: 0.3em 0;
+    border: 1px solid rgba(147, 112, 219, 0.3);
+    border-radius: 4px;
+    background-color: rgba(147, 112, 219, 0.05);
+}
+
+.khoj-chat-message-text .khoj-edit-accordion summary {
+    cursor: pointer;
+    padding: 0.5em;
+    font-weight: 500;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    user-select: none;
+}
+
+.khoj-chat-message-text .khoj-edit-accordion summary:hover {
+    background-color: rgba(147, 112, 219, 0.1);
+}
+
+.khoj-chat-message-text .khoj-edit-content {
+    padding: 0.5em;
+    margin: 0;
+    background-color: var(--background-primary);
+    border-top: 1px solid rgba(147, 112, 219, 0.3);
+}
+
+.khoj-chat-message-text .khoj-edit-content pre {
+    margin: 0;
+    padding: 0;
+    background-color: transparent;
+}
+
+.khoj-chat-message-text .khoj-edit-content code {
+    display: block;
+    white-space: pre-wrap;
+    font-family: var(--font-monospace);
+    font-size: 0.9em;
+}
+
+/* Retry badge styles */
+.khoj-retry-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background-color: var(--background-modifier-error);
+    color: var(--text-on-accent);
+    padding: 8px 16px;
+    border-radius: 16px;
+    margin: 8px 0;
+    font-size: 0.9em;
+    animation: slideIn 0.3s ease-out;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.khoj-retry-badge .retry-icon {
+    font-size: 1.2em;
+}
+
+.khoj-retry-badge .retry-count {
+    background: rgba(255, 255, 255, 0.2);
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 0.8em;
+    margin-left: auto;
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateY(-10px);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(0);
+        opacity: 1;
     }
 }
