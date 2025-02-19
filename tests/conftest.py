@@ -315,7 +315,7 @@ def chat_client_builder(search_config, user, index_content=True, require_auth=Fa
     if chat_provider == ChatModel.ModelType.OPENAI:
         online_chat_model = ChatModelFactory(name="gpt-4o-mini", model_type="openai")
     elif chat_provider == ChatModel.ModelType.GOOGLE:
-        online_chat_model = ChatModelFactory(name="gemini-1.5-flash", model_type="google")
+        online_chat_model = ChatModelFactory(name="gemini-2.0-flash", model_type="google")
     elif chat_provider == ChatModel.ModelType.ANTHROPIC:
         online_chat_model = ChatModelFactory(name="claude-3-5-haiku-20241022", model_type="anthropic")
     if online_chat_model:

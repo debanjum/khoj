@@ -68,7 +68,7 @@ dependencies = [
     "authlib == 1.2.1",
     "llama-cpp-python == 0.2.88",
     "itsdangerous == 2.1.2",
-    "httpx == 0.25.0",
+    "httpx == 0.27.2",
     "pgvector == 0.2.4",
     "psycopg2-binary == 2.9.9",
     "lxml == 4.9.3",
@@ -110,6 +110,7 @@ prod = [
     "stripe == 7.3.0",
     "twilio == 8.11",
     "boto3 >= 1.34.57",
+    "e2b-code-interpreter ~= 1.0.0",
 ]
 dev = [
     "khoj[prod]",

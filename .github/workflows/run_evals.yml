@@ -32,6 +32,19 @@ on:
         required: false
         default: 200
         type: number
+      sandbox:
+        description: 'Code sandbox to use'
+        required: false
+        default: 'terrarium'
+        type: choice
+        options:
+          - terrarium
+          - e2b
+      chat_model:
+        description: 'Chat model to use'
+        required: false
+        default: 'gemini-2.0-flash'
+        type: string
 
 jobs:
   eval:
@@ -40,7 +53,7 @@ jobs:
       matrix:
         # Use input from manual trigger if available, else run all combinations
         khoj_mode: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', inputs.khoj_mode)) || fromJSON('["general", "default", "research"]') }}
-        dataset: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', inputs.dataset)) || fromJSON('["frames", "simpleqa"]') }}
+        dataset: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', inputs.dataset)) || fromJSON('["frames", "simpleqa", "gpqa"]') }}
 
     services:
       postgres:
@@ -95,11 +108,14 @@ jobs:
           BATCH_SIZE: "20"
           RANDOMIZE: "True"
           KHOJ_URL: "http://localhost:42110"
+          KHOJ_CHAT_MODEL: ${{ github.event_name == 'workflow_dispatch' && inputs.chat_model || 'gemini-2.0-flash' }}
           KHOJ_LLM_SEED: "42"
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           SERPER_DEV_API_KEY: ${{ matrix.dataset != 'math500' && secrets.SERPER_DEV_API_KEY }}
           OLOSTEP_API_KEY: ${{ matrix.dataset != 'math500' && secrets.OLOSTEP_API_KEY }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          E2B_API_KEY: ${{ inputs.sandbox == 'e2b' && secrets.E2B_API_KEY }}
+          E2B_TEMPLATE: ${{ vars.E2B_TEMPLATE }}
           KHOJ_ADMIN_EMAIL: khoj
           KHOJ_ADMIN_PASSWORD: khoj
           POSTGRES_HOST: localhost
@@ -114,7 +130,7 @@ jobs:
 
           # Start code sandbox
           npm install -g pm2
-          npm run ci --prefix terrarium
+          NODE_ENV=production npm run ci --prefix terrarium
 
           # Wait for server to be ready
           timeout=120
@@ -147,7 +163,8 @@ jobs:
           echo "## Evaluation Summary of Khoj on ${{ matrix.dataset }} in ${{ matrix.khoj_mode }} mode" >> $GITHUB_STEP_SUMMARY
           echo "**$(head -n 1 *_evaluation_summary_*.txt)**" >> $GITHUB_STEP_SUMMARY
           echo "- Khoj Version: ${{ steps.hatch.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Chat Model: Gemini 1.5 Flash 002" >> $GITHUB_STEP_SUMMARY
+          echo "- Chat Model: ${{ inputs.chat_model }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Code Sandbox: ${{ inputs.sandbox}}" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           tail -n +2 *_evaluation_summary_*.txt >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
