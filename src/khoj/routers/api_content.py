@@ -330,6 +330,29 @@ def get_content_types(request: Request, client: Optional[str] = None):
     return list(configured_content_types & all_content_types)
 
 
+@api_content.delete("/{content_type}", status_code=200)
+@requires(["authenticated"])
+async def delete_content_type(
+    request: Request,
+    content_type: SearchType,
+    client: Optional[str] = None,
+):
+    user = request.user.object
+
+    await sync_to_async(EntryAdapters.delete_all_entries)(user, file_type=content_type)
+
+    update_telemetry_state(
+        request=request,
+        telemetry_type="api",
+        api="delete_content_config",
+        client=client,
+        metadata={"content_type": content_type},
+    )
+
+    enabled_content = await sync_to_async(EntryAdapters.get_unique_file_types)(user)
+    return {"status": "ok"}
+
+
 @api_content.get("/files", response_model=Dict[str, str])
 @requires(["authenticated"])
 async def get_all_files(
